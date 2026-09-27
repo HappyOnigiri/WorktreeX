@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -551,7 +552,7 @@ func (*lfsCacheDirectoryRaceRoot) Mkdir(string, os.FileMode) error {
 	return os.ErrExist
 }
 
-// Mkdir と Lstat の間で別の作成者が先に登録した directory だけを再利用する。
+// Mkdir の競合後は物理 directory だけを再利用し、それ以外は元の作成 error を返す。
 func TestEnsureLFSCacheDirectoryValidatesDirectoryAfterMkdirRace(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -587,8 +588,12 @@ func TestEnsureLFSCacheDirectoryValidatesDirectoryAfterMkdirRace(t *testing.T) {
 			}
 			root := &lfsCacheDirectoryRaceRoot{path: common}
 			err := ensureLFSCacheDirectory(root, "lfs")
-			if (err != nil) != test.wantErr {
-				t.Fatalf("ensureLFSCacheDirectory() err=%v, want error=%t", err, test.wantErr)
+			if test.wantErr {
+				if !errors.Is(err, os.ErrExist) {
+					t.Fatalf("ensureLFSCacheDirectory() err=%v, want the Mkdir error %v", err, os.ErrExist)
+				}
+			} else if err != nil {
+				t.Fatalf("ensureLFSCacheDirectory() err=%v, want nil", err)
 			}
 			if root.lstatCalls != 2 {
 				t.Fatalf("Lstat calls=%d, want initial miss and post-Mkdir inspection", root.lstatCalls)
