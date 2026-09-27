@@ -34,8 +34,8 @@ func newBranchPolicyFixture(t *testing.T) branchPolicyFixture {
 		t.Fatal(err)
 	}
 	fixtureGit(t, fixture.main, "init", "-q", "-b", "main")
-	// commit 後の自動 maintenance は detach して worktree prune を実行する。
-	// worktree add の admin dir は locked 作成前に prune され得るため、この一時 repo では止める。
+	// commit 後の自動 maintenance は別プロセスで動き、worktree add が locked を作る前に admin dir を prune し得る。
+	// この一時 repo では、その競合を避けるため自動 maintenance を止める。
 	fixtureGit(t, fixture.main, "config", "maintenance.auto", "false")
 	if err := os.WriteFile(filepath.Join(fixture.main, "tracked.txt"), []byte("tracked\n"), 0o600); err != nil {
 		t.Fatal(err)
