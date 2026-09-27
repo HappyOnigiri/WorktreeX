@@ -66,6 +66,20 @@ func TestLexPolicyCommandTracksSubshellInQuotedSubstitution(t *testing.T) {
 	}
 }
 
+func TestLexPolicySpanStopsAfterBalancedSubshell(t *testing.T) {
+	command := "(git switch feature) ) printf done"
+	tokens, end, ok := lexPolicySpan(command, 0, ')')
+	if !ok {
+		t.Fatal("subshell before the command substitution terminator was not well formed")
+	}
+	if want := strings.Index(command, ") )") + 2; end != want {
+		t.Fatalf("end=%d, want outer terminator at %d", end, want)
+	}
+	if got, want := policyTokenString(tokens), "( git switch feature )"; got != want {
+		t.Fatalf("tokens=%q, want %q", got, want)
+	}
+}
+
 func TestPolicySegmentRejectsWrappedShellWithoutCommand(t *testing.T) {
 	base := t.TempDir()
 	parts := []commandWord{{value: "su" + "do"}, {value: "ba" + "sh"}}
