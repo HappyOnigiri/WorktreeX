@@ -55,6 +55,30 @@ func TestLaunchSendsLegacyResolveAndLeasePayload(t *testing.T) {
 	}
 }
 
+func TestLaunchPreservesExplicitNoDaemonAfterOptions(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	record := filepath.Join(t.TempDir(), "launch-record")
+	t.Setenv("WX_TEST_LAUNCH_RECORD", record)
+	t.Setenv("WX_TEST_EVENT_RECORD", filepath.Join(t.TempDir(), "launch-events"))
+	agent := writeLaunchRecorder(t, "codex")
+	prependPath(t, filepath.Dir(agent))
+	root := t.TempDir()
+	cfg := config.Defaults()
+	cfg.Sessions.Paths.Codex.Sessions = []string{filepath.Join(home, "no-session-history")}
+	lease := daemon.Lease{SessionID: "session", Token: "token", Path: root, Ready: true}
+	client, stop := serveResumeLaunchRPCWithConfig(t, &resumeLaunchHandler{lease: lease}, cfg)
+	defer stop()
+
+	args := []string{"--model", "gpt-6-luna", "--no-daemon"}
+	if exit := client.RunAgent(context.Background(), "codex", args, nil, false); exit != 0 {
+		t.Fatalf("RunAgent exit=%d", exit)
+	}
+	if got := readLaunchRecord(t, record)["args"]; got != "--model gpt-6-luna --no-daemon" {
+		t.Fatalf("Codex argv=%q, want explicit --no-daemon without a duplicate", got)
+	}
+}
+
 func TestLaunchOmitsNoDaemonWhenDisabled(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	record := filepath.Join(t.TempDir(), "launch-record")
