@@ -538,6 +538,7 @@ func TestEnsureLFSCacheDirectoryAcceptsConcurrentCreation(t *testing.T) {
 type lfsCacheDirectoryRaceRoot struct {
 	path       string
 	lstatCalls int
+	raceCreate func(string) error
 }
 
 func (root *lfsCacheDirectoryRaceRoot) Lstat(name string) (os.FileInfo, error) {
@@ -548,34 +549,39 @@ func (root *lfsCacheDirectoryRaceRoot) Lstat(name string) (os.FileInfo, error) {
 	return os.Lstat(filepath.Join(root.path, name))
 }
 
-func (*lfsCacheDirectoryRaceRoot) Mkdir(string, os.FileMode) error {
+func (root *lfsCacheDirectoryRaceRoot) Mkdir(name string, _ os.FileMode) error {
+	if root.raceCreate != nil {
+		if err := root.raceCreate(filepath.Join(root.path, name)); err != nil {
+			return err
+		}
+	}
 	return os.ErrExist
 }
 
-// Mkdir の競合後は物理 directory だけを再利用し、それ以外は元の作成 error を返す。
+// 初回 Lstat の miss 後に競合した作成者が追加した path を再検査する。
 func TestEnsureLFSCacheDirectoryValidatesDirectoryAfterMkdirRace(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		name    string
-		prepare func(*testing.T, string) error
-		wantErr bool
+		name       string
+		raceCreate func(*testing.T, string) error
+		wantErr    bool
 	}{
 		{
-			name: "physical directory",
-			prepare: func(_ *testing.T, path string) error {
+			name: "directory created after initial miss",
+			raceCreate: func(_ *testing.T, path string) error {
 				return os.Mkdir(path, 0o700)
 			},
 		},
 		{
-			name: "regular file",
-			prepare: func(_ *testing.T, path string) error {
+			name: "regular file created after initial miss",
+			raceCreate: func(_ *testing.T, path string) error {
 				return os.WriteFile(path, []byte("file"), 0o600)
 			},
 			wantErr: true,
 		},
 		{
-			name: "symlink",
-			prepare: func(t *testing.T, path string) error {
+			name: "symlink created after initial miss",
+			raceCreate: func(t *testing.T, path string) error {
 				return os.Symlink(t.TempDir(), path)
 			},
 			wantErr: true,
@@ -583,10 +589,10 @@ func TestEnsureLFSCacheDirectoryValidatesDirectoryAfterMkdirRace(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			common := t.TempDir()
-			if err := test.prepare(t, filepath.Join(common, "lfs")); err != nil {
-				t.Fatal(err)
+			root := &lfsCacheDirectoryRaceRoot{
+				path:       common,
+				raceCreate: func(path string) error { return test.raceCreate(t, path) },
 			}
-			root := &lfsCacheDirectoryRaceRoot{path: common}
 			err := ensureLFSCacheDirectory(root, "lfs")
 			if test.wantErr {
 				if !errors.Is(err, os.ErrExist) {
