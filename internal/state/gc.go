@@ -108,7 +108,9 @@ func (s *Store) FinishColdRepositoryRemoval(ctx context.Context, slotID, reposit
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `UPDATE slot_repositories SET state='COLD' WHERE slot_id=? AND repository_id=? AND state IN ('RETIRING','COLD')`, slotID, repositoryID); err != nil {
+	// 削除した directory の identity を残すと、再準備で作り直した directory が別物と判定されて隔離される。
+	// 空の record は新規作成と同じく Early Ready で記録し直される。
+	if _, err := tx.ExecContext(ctx, `UPDATE slot_repositories SET state='COLD',dir_identity=NULL WHERE slot_id=? AND repository_id=? AND state IN ('RETIRING','COLD')`, slotID, repositoryID); err != nil {
 		return err
 	}
 	var remaining int

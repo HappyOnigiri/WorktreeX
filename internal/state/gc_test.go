@@ -63,14 +63,18 @@ func TestColdRemovalCompletionAndAdministrativeQueries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := store.RecordSlotRepositoryIdentity(ctx, "cold", "repository", "vol:1:/removed"); err != nil {
+		t.Fatal(err)
+	}
 	if _, changed, err := store.ScheduleColdRepositoryRemoval(ctx, ColdRepositoryCandidate{SlotID: "cold", WorkspaceID: "workspace", RepositoryID: "repository", WorktreePath: repository.WorktreePath}); err != nil || !changed {
 		t.Fatalf("cold removal scheduling changed=%v err=%v", changed, err)
 	}
 	if err := store.FinishColdRepositoryRemoval(ctx, "cold", "repository"); err != nil {
 		t.Fatal(err)
 	}
+	// 削除済み directory の identity が残ると、再準備で作り直した worktree が所有権不明として隔離される。
 	finished, err := store.SlotRepository(ctx, "cold", "repository")
-	if err != nil || finished.State != "COLD" {
+	if err != nil || finished.State != "COLD" || finished.DirIdentity != "" {
 		t.Fatalf("finished cold repository=%+v err=%v", finished, err)
 	}
 	slot, err := store.Slot(ctx, "cold")
