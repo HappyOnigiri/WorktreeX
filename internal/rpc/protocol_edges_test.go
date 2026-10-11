@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -340,3 +341,36 @@ func TestRequestDeadlinePrefersLiveMaxHandlerTimeout(t *testing.T) {
 		t.Fatalf("a zero live ceiling did not fall back to MaxHandlerTimeout: got %v", deadline)
 	}
 }
+
+// conn の deadline が ctx の timer より先に切れても、呼び出し側には期限切れとして届く。
+func TestTransportErrorReportsAnExpiredSocketDeadlineAsContextDeadline(t *testing.T) {
+	timeout := &net.OpError{Op: "read", Net: "unix", Err: os.ErrDeadlineExceeded}
+	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Millisecond))
+	defer cancel()
+	// timer が発火する前の状態を作るため、Done を持たない ctx へ deadline だけを載せる。
+	pending := deadlineOnlyContext{Context: context.Background(), deadline: time.Now().Add(-time.Millisecond)}
+	future := deadlineOnlyContext{Context: context.Background(), deadline: time.Now().Add(time.Hour)}
+	for _, test := range []struct {
+		name string
+		ctx  context.Context
+		err  error
+		want error
+	}{
+		{name: "ctx already expired", ctx: expired, err: timeout, want: context.DeadlineExceeded},
+		{name: "socket deadline before ctx timer", ctx: pending, err: timeout, want: context.DeadlineExceeded},
+		{name: "deadline not reached", ctx: future, err: timeout, want: timeout},
+		{name: "no deadline", ctx: context.Background(), err: timeout, want: timeout},
+		{name: "other error", ctx: pending, err: io.ErrUnexpectedEOF, want: io.ErrUnexpectedEOF},
+	} {
+		if got := transportError(test.ctx, test.err); !errors.Is(got, test.want) {
+			t.Fatalf("%s: transportError=%v, want %v", test.name, got, test.want)
+		}
+	}
+}
+
+type deadlineOnlyContext struct {
+	context.Context
+	deadline time.Time
+}
+
+func (c deadlineOnlyContext) Deadline() (time.Time, bool) { return c.deadline, true }
