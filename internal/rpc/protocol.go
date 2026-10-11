@@ -174,17 +174,11 @@ func (c Client) callOnce(ctx context.Context, method, idempotencyKey string, par
 		req.Deadline = deadline.UTC().Format(time.RFC3339Nano)
 	}
 	if err := writeFrame(conn, req); err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return ctxErr
-		}
-		return err
+		return transportError(ctx, err)
 	}
 	var resp Response
 	if err := readFrame(bufio.NewReader(conn), &resp); err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return ctxErr
-		}
-		return err
+		return transportError(ctx, err)
 	}
 	if resp.Version != ProtocolVersion {
 		return errors.New("wx daemon protocol version mismatch")
@@ -199,6 +193,19 @@ func (c Client) callOnce(ctx context.Context, method, idempotencyKey string, par
 		return json.Unmarshal(resp.Result, result)
 	}
 	return nil
+}
+
+// transportError は送受信の失敗を呼び出し側の ctx の言葉へ寄せる。
+// conn の deadline は ctx の deadline と同じ時刻なので、ctx の timer より先に socket の i/o timeout が届くことがある。
+// 呼び出し側の deadline を過ぎた i/o timeout は、ctx.Err() がまだ nil でも context.DeadlineExceeded として返す。
+func transportError(ctx context.Context, err error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if deadline, ok := ctx.Deadline(); ok && errors.Is(err, os.ErrDeadlineExceeded) && !time.Now().Before(deadline) {
+		return context.DeadlineExceeded
+	}
+	return err
 }
 
 // peerClosedKey は handler ctx へ載せる切断通知の key である。
