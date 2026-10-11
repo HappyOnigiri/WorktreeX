@@ -21,6 +21,8 @@ type recordingHandler struct {
 	params   []json.RawMessage
 	response any
 	err      error
+	// state は LeaseProgress が返す slot の状態で、空なら READY とする。
+	state string
 }
 
 type failingHookReader struct{}
@@ -33,9 +35,16 @@ func (h *recordingHandler) Handle(_ context.Context, method string, params json.
 	h.params = append(h.params, append(json.RawMessage(nil), params...))
 	response := h.response
 	err := h.err
+	state := h.state
 	h.mu.Unlock()
 	if err != nil {
 		return nil, err
+	}
+	if method == "LeaseProgress" && response == nil {
+		if state == "" {
+			state = "READY"
+		}
+		return map[string]string{"state": state}, nil
 	}
 	if response != nil {
 		return response, nil
@@ -114,7 +123,7 @@ func TestHookLifecyclePayloadsAndReadinessGates(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	wantMethods := "BindAgentSession,WaitReady,WaitReady,Release"
+	wantMethods := "BindAgentSession,WaitReady,LeaseProgress,Release"
 	if got := strings.Join(handler.methodsSnapshot(), ","); got != wantMethods {
 		t.Fatalf("methods=%s, want %s", got, wantMethods)
 	}
@@ -287,10 +296,10 @@ func TestRecordedClaudeAndCodexHookPayloads(t *testing.T) {
 		{name: "claude startup", fixture: "claude-2.1.258-session-start-startup.json", event: "session-start", method: "BindAgentSession"},
 		{name: "claude resume", fixture: "claude-2.1.258-session-start-resume.json", event: "session-start", method: "BindAgentSession"},
 		{name: "claude prompt", fixture: "claude-2.1.258-user-prompt-submit.json", event: "user-prompt-submit", method: "WaitReady"},
-		{name: "claude tool", fixture: "claude-2.1.258-pre-tool-use.json", event: "pre-tool-use", method: "WaitReady"},
+		{name: "claude tool", fixture: "claude-2.1.258-pre-tool-use.json", event: "pre-tool-use", method: "LeaseProgress"},
 		{name: "claude end", fixture: "claude-2.1.258-session-end.json", event: "session-end", method: "Release"},
 		{name: "codex resume", fixture: "codex-0.151.0-session-start-resume.json", event: "session-start", method: "BindAgentSession"},
-		{name: "codex exec", fixture: "codex-0.151.0-pre-tool-use-exec.json", event: "pre-tool-use", method: "WaitReady"},
+		{name: "codex exec", fixture: "codex-0.151.0-pre-tool-use-exec.json", event: "pre-tool-use", method: "LeaseProgress"},
 	}
 	for index, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -351,7 +360,7 @@ func TestManagedPreToolUseDeniesWithoutReachingTheDaemon(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &decoded); err != nil || decoded.HookSpecificOutput.PermissionDecision != "deny" {
 		t.Fatalf("stdout %q is not a single deny: %v", output, err)
 	}
-	// deny でなければ従来どおり readiness を待ち、daemon に届かなければ失敗する。
+	// deny でなければ readiness を確かめ、daemon に届かなければ失敗する。
 	if err := RunHook(context.Background(), "pre-tool-use", strings.NewReader(`{"tool_name":"Agent","tool_input":{"isolation":"remote"}}`)); err == nil {
 		t.Fatal("pre-tool-use without a deny succeeded through a missing daemon socket")
 	}
@@ -394,8 +403,8 @@ func TestReadinessHookSurvivesADaemonThatIsStillRestarting(t *testing.T) {
 		t.Fatalf("pre-tool-use hook failed across a daemon restart: %v", err)
 	}
 	methods := strings.Join(handler.methodsSnapshot(), ",")
-	if !strings.Contains(methods, "WaitReady") {
-		t.Fatalf("methods=%s, want WaitReady", methods)
+	if !strings.Contains(methods, "LeaseProgress") {
+		t.Fatalf("methods=%s, want LeaseProgress", methods)
 	}
 	cancel()
 	if err := <-done; err != nil {
@@ -482,8 +491,8 @@ func TestDirectHookIsLimitedToPreToolUseAndYieldsToManagedSessions(t *testing.T)
 				t.Fatal(err)
 			}
 		})
-		if methods := handler.methodsSnapshot(); len(methods) != 1 || methods[0] != "WaitReady" {
-			t.Fatalf("methods=%v, want [WaitReady]", methods)
+		if methods := handler.methodsSnapshot(); len(methods) != 1 || methods[0] != "LeaseProgress" {
+			t.Fatalf("methods=%v, want [LeaseProgress]", methods)
 		}
 		if output != "" {
 			t.Fatalf("direct root decided inside a managed session: %q", output)

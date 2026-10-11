@@ -434,6 +434,7 @@ func TestEverySubcommandHasAUniformPflagContract(t *testing.T) {
 		{name: "discard-recovery", run: runDiscardRecovery, helpExit: 0, helpOnStdout: true},
 		{name: "forget", run: runForget, helpExit: 0, helpOnStdout: true},
 		{name: "hook", run: runHook, helpExit: 2, helpOnStdout: false},
+		{name: "wait-ready", run: runWaitReady, helpExit: 0, helpOnStdout: true},
 	}
 	for _, c := range contracts {
 		t.Run(c.name, func(t *testing.T) {

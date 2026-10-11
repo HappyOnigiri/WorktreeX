@@ -244,14 +244,14 @@ func TestPreToolUseHookDecidesAfterReadiness(t *testing.T) {
 					t.Fatal(err)
 				}
 			})
-			// 書き換えと素通しは readiness を待ち、daemon を必要としない deny は待たずに出す。
+			// 書き換えと素通しは readiness を確かめ、daemon を必要としない deny は確かめずに出す。
 			methods := handler.methodsSnapshot()
 			if test.want == "deny" {
 				if len(methods) != 0 {
 					t.Fatalf("methods=%v, want no RPC before a deny", methods)
 				}
-			} else if len(methods) != 1 || methods[0] != "WaitReady" {
-				t.Fatalf("methods=%v, want [WaitReady]", methods)
+			} else if len(methods) != 1 || methods[0] != "LeaseProgress" {
+				t.Fatalf("methods=%v, want [LeaseProgress]", methods)
 			}
 			if test.want == "" {
 				if output != "" {

@@ -340,4 +340,17 @@ configuration, not normally run directly.`,
 
 stdin から wx agent hook event を読み取って実行します。agent hook configuration から呼び出され、通常は直接実行しません。`,
 	},
+	"help.command.wait-ready": {
+		EN: `Usage: wx wait-ready
+
+Wait until the workspace of the current wx session is fully prepared.
+Run by the agent inside a wx session when a hook reports that the workspace
+is still being prepared. Gives up after at most 100 seconds with a non-zero
+exit status; run it again to keep waiting.`,
+		JA: `使い方: wx wait-ready
+
+現在の wx session の workspace の準備が完了するまで待ちます。
+hook が workspace の準備中を知らせたときに、wx session 内の agent が実行します。
+最大 100 秒で待機を打ち切り、0 以外の終了コードで終わります。待ち続けるには再実行してください。`,
+	},
 }

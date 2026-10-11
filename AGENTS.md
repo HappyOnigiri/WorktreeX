@@ -12,7 +12,7 @@ CIのランナーは全てlinuxなので、platform依存の実装を触った�
   ユーザーが明示的に実行するコマンドでの削除経路は用意してよい。
 - Early Readyでエージェントが起動した後に準備・更新が失敗した貸出は隔離せず、貸出を維持したまま`LEASED`へ進める。
   隔離すると返却が`DRAINING`を通らず、エージェントの作業がsnapshotへ届かないためである。
-  失敗はslotの失敗記録として残し、エージェントへは最初の`user-prompt-submit`で1回だけ伝える。
+  失敗はslotの失敗記録として残し、エージェントへは準備完了を観測した最初の`user-prompt-submit`または`wx wait-ready`で1回だけ伝える。
 - Gitは必ず`internal/gitx`経由で起動する。
   継承した`GIT_DIR`・`GIT_WORK_TREE`・`GIT_INDEX_FILE`などが漏れると、別リポジトリへの操作が成功し、未捕捉のworktreeを削除し得る。
 - slotの削除権限は`slots`に登録されたroot世代とroot相対pathだけで決め、inode・marker・Git lock・HEAD・workspace紐付けの不一致を拒否の理由にしない。
