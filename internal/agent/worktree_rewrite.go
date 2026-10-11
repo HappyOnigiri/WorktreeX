@@ -130,11 +130,17 @@ func worktreeAddHookOutput(payload []byte, workspaceRoot string) (preToolUseHook
 	return preToolUseHookOutput{}, false
 }
 
-// writePreToolUseDecision は判定を 1 つの JSON として stdout へ書く。
+// writeUnmanagedPreToolUseDecision は wx 外の session の判定を 1 つだけ stdout へ書く。
 // pre-tool-use の stdout は JSON として解釈されるため、判定が無いときは何も書かない。
-// workspaceRoot は書き換え対象と判定する境界で、管理下 session と wx -n の直接起動で出所が違う。
-func writePreToolUseDecision(ctx context.Context, payload []byte, workspaceRoot string, managed bool) {
-	if output, ok := preToolUseDecision(ctx, payload, workspaceRoot, managed); ok {
+// directRoot は wx -n の直接起動でだけ渡る書き換えの境界で、git worktree add の書き換えを優先する。
+func writeUnmanagedPreToolUseDecision(ctx context.Context, payload []byte, directRoot string) {
+	if directRoot != "" {
+		if output, ok := preToolUseDecision(ctx, payload, directRoot, false); ok {
+			writePreToolUseOutput(output)
+			return
+		}
+	}
+	if output, ok := unmanagedSubagentIsolationHookOutput(ctx, payload, configuredWorktreeMode); ok {
 		writePreToolUseOutput(output)
 	}
 }
@@ -149,7 +155,8 @@ func writePreToolUseOutput(output preToolUseHookOutput) {
 }
 
 // preToolUseDecision は git worktree add の書き換えを優先し、判定を 1 つだけ選ぶ。
-// SubAgent の isolation とブランチ attach の deny は管理下 session（WX_SESSION_ID あり）に限る。
+// ここでの SubAgent の isolation とブランチ attach の deny は管理下 session（WX_SESSION_ID あり）に限る。
+// wx 外の session の isolation は writeUnmanagedPreToolUseDecision が保存済み方針を引いて判定する。
 func preToolUseDecision(ctx context.Context, payload []byte, workspaceRoot string, managed bool) (preToolUseHookOutput, bool) {
 	if len(payload) == 0 {
 		return preToolUseHookOutput{}, false

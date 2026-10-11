@@ -94,6 +94,9 @@
 
    管理下のsessionでは、同じhookが`Agent(isolation="worktree")`と、linked worktreeへブランチをattachする`checkout`・`switch`・`symbolic-ref`も拒否する。
    前者はwx管理外のworktreeを残してlink ruleも適用しないため、後者はslotをdetachedのまま保つためである。
+   `Agent(isolation="worktree")`はwxの外で起動したsessionでも、cwdのworkspaceの保存済み方針が`hot`か`cold`なら拒否する。
+   wxの外のsessionは終了してもleaseを返さないため、案内には`wx new --json`のidを控えて`wx release`で返す手順を含める。
+   `off` / `ask`ではwx newを使う前提が無いので素通しする。
    attachの判定はcdとサブシェルを追って各git呼び出しの実行先を決め、対象のgit呼び出しを含むのに実行先や引数を静的に決められない場合は見逃しを避けて拒否する。
    判定は1回のhookで1つだけ出し、`git worktree add`の書き換えを優先する。
    拒否はdaemonを必要としないので準備完了を待たずに出し、書き換えだけを準備完了の後に出す。daemonに届かずhookが失敗で終わると、agentは操作を通してしまうためである。
