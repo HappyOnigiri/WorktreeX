@@ -120,7 +120,7 @@ func TestPreToolUseHookDeniesSubagentWorktreeIsolation(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
-		// deny は daemon を必要としないので readiness を待たずに出す。
+		// deny は daemon を必要としないので readiness を確かめずに出す。
 		if methods := handler.methodsSnapshot(); len(methods) != 0 {
 			t.Fatalf("methods=%v, want no RPC before the deny", methods)
 		}

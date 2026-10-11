@@ -131,8 +131,12 @@ func TestMutationHookNoticeOnlyBelongsToUserPrompt(t *testing.T) {
 	if err := RunHook(ctx, "pre-tool-use", strings.NewReader("")); err != nil {
 		t.Fatal(err)
 	}
+	// pre-tool-use は待たずに LeaseProgress で判定し、案内を消費する WaitReady を呼ばない。
+	if params := handler.paramsFor("WaitReady"); params != nil {
+		t.Fatalf("pre-tool-use unexpectedly waited with WaitReady: %s", params)
+	}
 	var toolParams map[string]any
-	if err := json.Unmarshal(handler.paramsFor("WaitReady"), &toolParams); err != nil {
+	if err := json.Unmarshal(handler.paramsFor("LeaseProgress"), &toolParams); err != nil {
 		t.Fatal(err)
 	}
 	if _, exists := toolParams["notice"]; exists {

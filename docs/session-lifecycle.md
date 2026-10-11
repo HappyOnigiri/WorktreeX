@@ -35,13 +35,19 @@
 
 3. **準備完了のゲート** — 準備が終わっていないworktreeでエージェントが動き出さない仕組みは2通りある。
    `repository_defaults.readiness.mode: early`では、hookが使える通常起動はGit登録と起動用ファイルの配置までを待って起動する。
-   以降の`user-prompt-submit`・`pre-tool-use` hookが全準備の完了まで待つ。
+   以降は全準備の完了までエージェントの操作を止める。
+   Claude Codeはhookを30秒で打ち切り、打ち切りやエラー終了では操作を止めないため、hookの中で全準備を待ち切ることはできない。
+   そこで待機はエージェント自身が実行する`wx wait-ready`へ移し、上限をBashツールの既定タイムアウトに収める。
+   `user-prompt-submit`はhookの上限に収まる範囲だけ待ち、終わらなければ成功で終えて`wx wait-ready`の実行を案内する。
+   `pre-tool-use`は待たずにslotの状態を見て、準備中なら`wx wait-ready`以外のツール呼び出しをdenyする。
+   安全性はこのdenyで担保し、エージェントが案内を無視しても準備中のworktreeでツールは動かない。
+   CodexのPreToolUseが全ツールで発火するかは確認できておらず、発火しないツールでは準備中のゲートが案内頼みになる。
    待った先で準備が失敗していても、エージェントは既にそのworktreeで作業しているため止めない。
    slotは隔離せず貸出のまま`LEASED`へ進め、失敗は`slots.failure_code`・`failure_detail_path`・`failure_phase`に残す。
    これは終了時の返却を`DRAINING`へ通し、作業をsnapshotへ届けるためである。
    返却が準備の失敗より先に着くとslotは`PREPARING`のままsessionだけ`RELEASING`になるので、失敗の記録はこの状態のownerも受ける。
    弾くと隔離へ倒れて返却済みの作業がsnapshotに届かない。準備完了の遷移が同じsession状態を見て`LEASED`ではなく`DRAINING`を選ぶ。
-   失敗した事実は最初の`user-prompt-submit`のstdoutで1回だけエージェントへ伝え、消費済みは`sessions.prepare_notice_delivered_at`に残して再起動後の再送を防ぐ。
+   失敗した事実は準備完了を観測した最初の`user-prompt-submit`または`wx wait-ready`のstdoutで1回だけエージェントへ伝え、消費済みは`sessions.prepare_notice_delivered_at`に残して再起動後の再送を防ぐ。
    稼働中の不完全さは`wx slots`のSTATE列と`--json`の`prepare_failure_*`、`wx doctor --probe`のfindingから読める。
    readinessのtimeoutとdaemon応答不能はこの扱いに含めない。準備がまだ書き込みを続けている可能性があり、貸出中のworktreeを書き換えないという不変条件に触れるためである。
    `repository_defaults.readiness.mode: full`またはhookが無い起動（`internal/hookconfig`が判定する）は、clientが起動前に全準備を待つ。
@@ -74,7 +80,7 @@
 
    貸出付きのUPDATEは、全repositoryのcheckoutと配置、workspace rootの配置の同期を終えた時点でEarly Readyを公開する。
    checkout直後に出すと、変更された`CLAUDE.local.md`などのincludeが未配置のまま起動するためである。
-   prepare commandの再実行・CoW・最終の検証はその後に走り、エージェントは最初の`user-prompt-submit`でFull Readyを待つので作業と重ならない。
+   prepare commandの再実行・CoW・最終の検証はその後に走り、エージェントのツール呼び出しはFull Readyまで`pre-tool-use`が止めるので作業と重ならない。
    resume・restoreは全準備を待ち、UPDATE経路を使わない。
    起動前の待機中もheartbeat・終了要求・失敗時のReleaseを維持する。
 
@@ -82,7 +88,7 @@
    受理条件は`<絶対パス> hook <event>`ちょうどの形なので、agent設定側に条件分岐ラッパーを挟んでも受理されない。
    `WX_SESSION_ID`の有無による素通りはwx側（`internal/agent/hook.go`）で判定するため、ラッパーはそもそも不要である。
 
-   `pre-tool-use` hookは準備完了を待つほか、agentが単独で実行しようとした`git worktree add`をツール入力の書き換えで`wx new`へ写す。
+   `pre-tool-use` hookは準備中のツール呼び出しを止めるほか、agentが単独で実行しようとした`git worktree add`をツール入力の書き換えで`wx new`へ写す。
    素のworktreeはslotの準備も保存も返却も受けられないためで、安全に写せない形は写し方を案内して拒否する。
    判定はコマンド文字列の静的な解析だけで行い、候補を同定できない入力は通す。
 

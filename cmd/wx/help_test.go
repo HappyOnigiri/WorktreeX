@@ -713,7 +713,7 @@ func TestHelpListsStayAligned(t *testing.T) {
 	var top bytes.Buffer
 	topUsage(&top)
 	texts["top"] = top.String()
-	for _, command := range []string{"status", "doctor", "gc", "clear", "retry-standby", "sessions", "config", "setup", "resume", "discard-recovery", "forget", "update", "daemon", "hook", "shell", "run", "new", "release"} {
+	for _, command := range []string{"status", "doctor", "gc", "clear", "retry-standby", "sessions", "config", "setup", "resume", "discard-recovery", "forget", "update", "daemon", "hook", "wait-ready", "shell", "run", "new", "release"} {
 		var output bytes.Buffer
 		commandUsage(&output, command)
 		texts[command] = output.String()

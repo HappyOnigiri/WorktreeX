@@ -87,6 +87,8 @@ func run(ctx context.Context, args []string) int {
 		return runDaemon(ctx, args[1:])
 	case "hook":
 		return runHook(ctx, args[1:])
+	case "wait-ready":
+		return runWaitReady(ctx, args[1:])
 	case "slots":
 		return runSlots(ctx, args[1:])
 	case "bench":
@@ -160,6 +162,27 @@ func runHook(ctx context.Context, args []string) int {
 	}
 	if err := agent.RunHook(ctx, fs.Arg(0), os.Stdin); err != nil {
 		fmt.Fprintln(os.Stderr, i18n.T(ctx, "rpc.readiness_blocked", nil)+":", err)
+		return 1
+	}
+	return 0
+}
+
+func runWaitReady(ctx context.Context, args []string) int {
+	ctx = commandContext(ctx)
+	fs := pflag.NewFlagSet("wait-ready", pflag.ContinueOnError)
+	fs.Usage = func() { commandUsageLanguage(os.Stdout, "wait-ready", i18n.LanguageFromContext(ctx)) }
+	if code, done := finishFlagParse(fs, "wait-ready", args); done {
+		return code
+	}
+	if fs.NArg() != 0 {
+		commandUsageLanguage(os.Stderr, "wait-ready", i18n.LanguageFromContext(ctx))
+		return 2
+	}
+	// 期限切れの案内は RunWaitReady が出力済みで、エージェントには終了コードで再実行を促す。
+	if err := agent.RunWaitReady(ctx, os.Stdout, os.Stderr); err != nil {
+		if !errors.Is(err, agent.ErrReadinessPending) {
+			fmt.Fprintln(os.Stderr, i18n.T(ctx, "common.error", nil)+":", err)
+		}
 		return 1
 	}
 	return 0

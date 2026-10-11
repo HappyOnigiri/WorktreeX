@@ -57,10 +57,10 @@ func RunHook(ctx context.Context, event string, input io.Reader) error {
 			return err
 		}
 	case "pre-tool-use":
-		// stdin は WaitReady より先に読み切る。読まずに待つと、command が大きいときに
+		// stdin は daemon への問い合わせより先に読み切る。読まずに待つと、command が大きいときに
 		// agent 側の write が pipe buffer で止まり、双方が待ち合って deadlock する。
 		toolPayload = readHookPayload(input)
-		// deny は daemon を必要としないので readiness を待たずに出す。
+		// deny は daemon を必要としないので readiness を確かめずに出す。
 		// daemon に届かず hook が失敗で終わると agent は操作を通すため、その場合にも deny を失わないようにする。
 		toolDecision, toolDecided = preToolUseDecision(ctx, toolPayload, os.Getenv("WX_WORKSPACE_ROOT"), true)
 		if toolDecided && toolDecision.HookSpecificOutput.PermissionDecision == "deny" {
@@ -106,31 +106,39 @@ func RunHook(ctx context.Context, event string, input io.Reader) error {
 			writeRecoveryDiscardedNotice()
 		}
 		return nil
-	case "user-prompt-submit", "pre-tool-use":
-		timeout := 10 * time.Minute
-		if raw := os.Getenv("WX_READINESS_TIMEOUT"); raw != "" {
-			d, err := time.ParseDuration(raw)
-			if err != nil || d <= 0 {
-				return errors.New("invalid WX_READINESS_TIMEOUT")
-			}
-			timeout = d
-		}
-		waitCtx, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
-		params := map[string]any{"session_id": wxID, "token": token, "timeout_ms": int(timeout.Milliseconds())}
-		// 準備失敗の案内は 1 回しか出ないため、stdout がそのままエージェントの context に入る
-		// user-prompt-submit だけが要求する。pre-tool-use の stdout は判定 JSON の場所である。
-		if event == "user-prompt-submit" {
-			params["notice"] = true
-		}
-		var response struct {
-			Notice string `json:"notice"`
-		}
-		if err := client.Call(waitCtx, "WaitReady", params, &response); err != nil {
+	case "user-prompt-submit":
+		budget, err := readinessBudget(userPromptReadinessBudget)
+		if err != nil {
 			return err
 		}
-		if response.Notice != "" {
-			_, _ = fmt.Fprintln(os.Stdout, response.Notice)
+		notice, pending, err := waitReady(ctx, client, wxID, token, budget)
+		if err != nil {
+			return err
+		}
+		if pending {
+			// 期限切れを失敗で返すと agent は案内を受け取らずにプロンプトを処理する。
+			// exit 0 の stdout は context に入るので、待機をエージェント自身のコマンドへ引き継がせる。
+			_, _ = fmt.Fprintln(os.Stdout, userPromptPendingNotice)
+			return nil
+		}
+		if notice != "" {
+			_, _ = fmt.Fprintln(os.Stdout, notice)
+		}
+		return nil
+	case "pre-tool-use":
+		// hook は 30 秒で cancel され、cancel は操作を止めない。待たずに判定し、準備中は deny で止める。
+		if isWaitReadyInvocation(toolPayload) {
+			return nil
+		}
+		var progress struct {
+			State string `json:"state"`
+		}
+		if err := client.Call(ctx, "LeaseProgress", map[string]any{"session_id": wxID, "token": token}, &progress); err != nil {
+			return err
+		}
+		if !fullyReady(progress.State) {
+			writePreToolUseOutput(denyPreToolUse(fmt.Sprintf(preparingDenyReason, progress.State), preparingDenySystemMessage))
+			return nil
 		}
 		// 書き換えは readiness の後に出す。書き換え先の wx new は準備の終わった workspace からしか貸し出せない。
 		if toolDecided {
@@ -229,7 +237,7 @@ func decodeHookPayload(input io.Reader) (HookInput, error) {
 }
 
 // readHookPayload は pre-tool-use hook の標準入力を読む。
-// 判定に使えない入力（読み取り失敗・空）は nil を返し、readiness 待ちだけを行う形に倒す。
+// 判定に使えない入力（読み取り失敗・空）は nil を返し、readiness の判定だけを行う形に倒す。
 func readHookPayload(input io.Reader) []byte {
 	data, err := io.ReadAll(io.LimitReader(input, 1<<20))
 	if err != nil {
