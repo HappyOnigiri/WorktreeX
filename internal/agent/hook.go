@@ -32,10 +32,10 @@ func RunHook(ctx context.Context, event string, input io.Reader) error {
 	token := os.Getenv("WX_SESSION_TOKEN")
 	socket := os.Getenv("WX_DAEMON_SOCKET")
 	if wxID == "" && token == "" {
-		// wx -n の直接起動には session が無く、daemon へ接続する相手もいない。
-		// 書き換えの判定だけをその場で出し、判定できない入力は素通しさせる。
-		if root := os.Getenv("WX_DIRECT_ROOT"); root != "" && event == "pre-tool-use" {
-			writePreToolUseDecision(ctx, readHookPayload(input), root, false)
+		// wx 外の起動（wx -n の直接起動を含む）には session が無く、daemon へ接続する相手もいない。
+		// 判定だけをその場で出し、判定できない入力は素通しさせる。
+		if event == "pre-tool-use" {
+			writeUnmanagedPreToolUseDecision(ctx, readHookPayload(input), os.Getenv("WX_DIRECT_ROOT"))
 		}
 		return nil
 	}
