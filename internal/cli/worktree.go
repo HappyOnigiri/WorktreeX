@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -179,10 +180,10 @@ func (c Client) selectWorktreeMode(ctx context.Context, options WorktreeOptions,
 // 書き換え先の wx new は off / ask の workspace では daemon に拒否されるため、hot / cold でだけ有効にする。
 // 境界は policy root ではなく起動元 worktree の toplevel である。policy root は main worktree を指すので、
 // linked worktree や wx の slot 内で -n 起動すると cwd の前方一致が常に外れ、無言で素通しになる。
+// repository 外では、配下に repository を持つ multi-repository workspace に限り起動ディレクトリを境界にする。
 // commentlint:allow-long -- 境界に toplevel を使う理由（policy root だと素通しになる）を残す
 func (c Client) directHookEnvironment(ctx context.Context, sourceCWD, root string, rootErr error, options WorktreeOptions) []string {
-	// root が解けていないと WorktreeMode はグローバル既定を返す。repository 外で書き換えを有効にすると、
-	// 書き換えた先の wx new が daemon 側の discovery で失敗するだけになる。
+	// root が解けていないと WorktreeMode はグローバル既定を返し、hot / cold の判定が workspace と無関係になる。
 	if !options.Disable || rootErr != nil {
 		return nil
 	}
@@ -191,6 +192,13 @@ func (c Client) directHookEnvironment(ctx context.Context, sourceCWD, root strin
 	}
 	discoverer := discovery.Discoverer{Git: &gitx.Runner{Timeout: c.Config.System.Discovery.Timeout.Duration}, Config: c.Config}
 	toplevel, err := discoverer.Toplevel(ctx, sourceCWD)
+	if errors.Is(err, discovery.ErrNotRepository) {
+		// repository 外の root は PolicyRoot が返した起動ディレクトリの canonical path である。
+		// 配下に repository が無いと書き換えた先の wx new が daemon 側の discovery で失敗するだけなので、渡さない。
+		if found, findErr := discoverer.ContainsRepository(ctx, root); findErr == nil && found {
+			toplevel, err = root, nil
+		}
+	}
 	if err != nil || toplevel == "" {
 		return nil
 	}

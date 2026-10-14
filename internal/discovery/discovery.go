@@ -233,9 +233,61 @@ func repositoryIsMainWorktree(root string, repo Repository) bool {
 func (d *Discoverer) multiWorkspace(ctx context.Context, root string) (Workspace, error) {
 	ctx, cancel := context.WithTimeout(ctx, d.Config.System.Discovery.Timeout.Duration)
 	defer cancel()
+	var repos []Repository
+	err := d.walkRepositories(ctx, root, func(configRoot, path, rel string) error {
+		repo, err := d.inspectRepoForWorkspace(ctx, configRoot, path, rel)
+		if err != nil {
+			return err
+		}
+		repos = append(repos, repo)
+		return nil
+	})
+	if err != nil {
+		return Workspace{}, err
+	}
+	if len(repos) == 0 {
+		return Workspace{}, fmt.Errorf("no Git repositories found below %s", root)
+	}
+	canonical, err := domain.Canonicalize(root)
+	if err != nil {
+		return Workspace{}, err
+	}
+	repos, err = dedupeRepositories(string(canonical), repos)
+	if err != nil {
+		return Workspace{}, err
+	}
+	// repositoryWorkspace と同じく、この ID は候補に過ぎない。
+	// SQLite は既登録の multi-repository workspace を root path から解決する。
+	id, err := domain.NewShortID()
+	if err != nil {
+		return Workspace{}, err
+	}
+	return Workspace{ID: domain.WorkspaceID(id), Root: canonical, Kind: "multi_repository", Repositories: repos}, nil
+}
+
+// errRepositoryFound は ContainsRepository が最初の repository で walk を打ち切るための番兵である。
+var errRepositoryFound = errors.New("repository found")
+
+// ContainsRepository は cwd が multi-repository workspace として解決できるか、つまり Resolve と同じ探索規則で
+// 配下に repository が 1 つ以上あるかを返す。各 repository の検査はせず、最初の 1 つで探索を打ち切る。
+// commentlint:allow-long -- Resolve との判定範囲の違い（検査をしない）を呼び出し側へ伝える
+func (d *Discoverer) ContainsRepository(ctx context.Context, cwd string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, d.Config.System.Discovery.Timeout.Duration)
+	defer cancel()
+	err := d.walkRepositories(ctx, cwd, func(string, string, string) error { return errRepositoryFound })
+	if errors.Is(err, errRepositoryFound) {
+		return true, nil
+	}
+	return false, err
+}
+
+// walkRepositories は root 配下を multi-repository workspace の探索規則で歩き、repository の位置ごとに visit を呼ぶ。
+// visit には個別設定を引く canonical な configRoot と、repository の path・root 相対 path を渡す。
+// commentlint:allow-long -- visit へ渡す引数の意味を残す
+func (d *Discoverer) walkRepositories(ctx context.Context, root string, visit func(configRoot, path, rel string) error) error {
 	// 設定キーは canonical path なので、個別指定を引くためだけに先に解決する。
 	// walk 自体は非 canonical な root のまま行う。ここで差し替えると rel の計算と
-	// repositoryIsMainWorktree の意味が変わるためで、解決の失敗は walk 後の Canonicalize が同じ文言で報告する。
+	// repositoryIsMainWorktree の意味が変わるためで、解決の失敗は multiWorkspace が walk 後の Canonicalize で同じ文言で報告する。
 	configRoot := root
 	if canonical, err := domain.Canonicalize(root); err == nil {
 		configRoot = string(canonical)
@@ -249,8 +301,7 @@ func (d *Discoverer) multiWorkspace(ctx context.Context, root string) (Workspace
 	}
 	wtRoot, _ := config.ExpandHome(d.Config.WorktreeRoot())
 	entries := 0
-	var repos []Repository
-	err := filepath.WalkDir(root, func(path string, e fs.DirEntry, walkErr error) error {
+	return filepath.WalkDir(root, func(path string, e fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -279,36 +330,13 @@ func (d *Discoverer) multiWorkspace(ctx context.Context, root string) (Workspace
 		}
 		gitPath := filepath.Join(path, ".git")
 		if _, err := os.Lstat(gitPath); err == nil {
-			repo, err := d.inspectRepoForWorkspace(ctx, configRoot, path, rel)
-			if err != nil {
+			if err := visit(configRoot, path, rel); err != nil {
 				return err
 			}
-			repos = append(repos, repo)
 			return filepath.SkipDir
 		}
 		return nil
 	})
-	if err != nil {
-		return Workspace{}, err
-	}
-	if len(repos) == 0 {
-		return Workspace{}, fmt.Errorf("no Git repositories found below %s", root)
-	}
-	canonical, err := domain.Canonicalize(root)
-	if err != nil {
-		return Workspace{}, err
-	}
-	repos, err = dedupeRepositories(string(canonical), repos)
-	if err != nil {
-		return Workspace{}, err
-	}
-	// repositoryWorkspace と同じく、この ID は候補に過ぎない。
-	// SQLite は既登録の multi-repository workspace を root path から解決する。
-	id, err := domain.NewShortID()
-	if err != nil {
-		return Workspace{}, err
-	}
-	return Workspace{ID: domain.WorkspaceID(id), Root: canonical, Kind: "multi_repository", Repositories: repos}, nil
 }
 
 // ErrNotRepository は MainWorktree が repository 外を指されたことを表す。

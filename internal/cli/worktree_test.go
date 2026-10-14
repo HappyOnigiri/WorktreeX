@@ -237,21 +237,28 @@ func directEnvironmentValue(t *testing.T, output, key string) string {
 	return ""
 }
 
-// wx -n は保存済み方針が hot / cold の repository でだけ、書き換えの境界と所有者を agent へ渡す。
-// 境界は起動元 worktree の toplevel で、所有者は wx 自身の PID である。
+// wx -n は保存済み方針が hot / cold の repository か multi-repository workspace でだけ、書き換えの境界と所有者を agent へ渡す。
+// 境界は起動元 worktree の toplevel（repository 外では起動ディレクトリ）で、所有者は wx 自身の PID である。
+// commentlint:allow-long -- 境界を渡す条件を 1 文で残す
 func TestDirectAgentPassesRewriteBoundaryOnlyWhenWorktreesAreEnabled(t *testing.T) {
 	for name, test := range map[string]struct {
 		mode    string
 		disable bool
 		repo    bool
-		want    bool
+		// nested は repository 外の起動ディレクトリの配下に repository を置く（multi-repository workspace）。
+		nested bool
+		want   bool
 	}{
-		"hot repository":       {mode: "hot", disable: true, repo: true, want: true},
-		"cold repository":      {mode: "cold", disable: true, repo: true, want: true},
-		"ask repository":       {mode: "ask", disable: true, repo: true},
-		"off repository":       {mode: "off", disable: true, repo: true},
-		"saved off without -n": {mode: "off", repo: true},
-		"outside a repository": {mode: "hot", disable: true},
+		"hot repository":                        {mode: "hot", disable: true, repo: true, want: true},
+		"cold repository":                       {mode: "cold", disable: true, repo: true, want: true},
+		"ask repository":                        {mode: "ask", disable: true, repo: true},
+		"off repository":                        {mode: "off", disable: true, repo: true},
+		"saved off without -n":                  {mode: "off", repo: true},
+		"outside a repository":                  {mode: "hot", disable: true},
+		"hot multi-repository":                  {mode: "hot", disable: true, nested: true, want: true},
+		"cold multi-repository":                 {mode: "cold", disable: true, nested: true, want: true},
+		"ask multi-repository":                  {mode: "ask", disable: true, nested: true},
+		"saved off multi-repository without -n": {mode: "off", nested: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			home := t.TempDir()
@@ -261,6 +268,9 @@ func TestDirectAgentPassesRewriteBoundaryOnlyWhenWorktreesAreEnabled(t *testing.
 				source = probeWorktreeFixtureAt(t, source)
 			} else if err := os.MkdirAll(source, 0o700); err != nil {
 				t.Fatal(err)
+			}
+			if test.nested {
+				probeWorktreeFixtureAt(t, filepath.Join(source, "member"))
 			}
 			cfg := config.Defaults()
 			cfg.WorkspaceDefaults.Worktree = test.mode
@@ -281,8 +291,12 @@ func TestDirectAgentPassesRewriteBoundaryOnlyWhenWorktreesAreEnabled(t *testing.
 				}
 				return
 			}
-			if root != source {
-				t.Fatalf("WX_DIRECT_ROOT=%q, want the launching worktree toplevel %q", root, source)
+			want, err := filepath.EvalSymlinks(source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if root != want {
+				t.Fatalf("WX_DIRECT_ROOT=%q, want the launching directory %q", root, want)
 			}
 			if pid != strconv.Itoa(os.Getpid()) {
 				t.Fatalf("WX_DIRECT_OWNER_PID=%q, want this process %d", pid, os.Getpid())
