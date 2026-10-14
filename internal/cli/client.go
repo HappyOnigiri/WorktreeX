@@ -546,7 +546,7 @@ func openLeaseDirectory(cfg config.Config, lease daemon.Lease) (*os.File, error)
 }
 
 // envDirectRoot と envDirectOwnerPID は wx -n が直接起動する agent にだけ渡す。
-// envDirectRoot は git worktree add を wx new へ書き換える境界（起動元 worktree の toplevel）で、
+// envDirectRoot は git worktree add を wx new へ書き換える境界（起動元 worktree の toplevel、repository 外の multi-repository workspace では起動ディレクトリ）で、
 // envDirectOwnerPID はその貸出の返却契機になる wx 自身の PID である。
 const (
 	envDirectRoot     = "WX_DIRECT_ROOT"

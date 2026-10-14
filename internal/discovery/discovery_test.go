@@ -723,3 +723,36 @@ func TestResolveMultiRepositoryUsesWorkspaceDiscoveryOverrides(t *testing.T) {
 		}
 	}
 }
+
+// ContainsRepository は multiWorkspace と同じ探索規則で判定し、repository の検査をしない。
+// 除外ディレクトリ配下だけにある repository は数えず、検査に失敗する repository も見つかった扱いにする。
+func TestContainsRepositoryFollowsTheMultiWorkspaceWalkWithoutInspecting(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.System.Storage.WorktreeRoot = filepath.Join(t.TempDir(), "worktrees")
+	cfg.System.Discovery.Timeout.Duration = time.Second
+	discoverer := Discoverer{Git: &gitx.Runner{Timeout: time.Second}, Config: cfg}
+
+	empty := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(empty, "node_modules", "package", ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if found, err := discoverer.ContainsRepository(context.Background(), empty); err != nil || found {
+		t.Fatalf("excluded-only directory found=%v err=%v", found, err)
+	}
+
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "nested", "repository", ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	if found, err := discoverer.ContainsRepository(context.Background(), workspace); err != nil || !found {
+		t.Fatalf("workspace with a repository found=%v err=%v", found, err)
+	}
+	if _, err := discoverer.ContainsRepository(context.Background(), filepath.Join(workspace, "missing")); err == nil {
+		t.Fatal("missing directory succeeded")
+	}
+}
