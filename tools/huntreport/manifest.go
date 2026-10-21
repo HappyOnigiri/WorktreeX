@@ -135,9 +135,9 @@ func writeSummary(man huntManifest) error {
 
 func summaryText(man huntManifest) string {
 	lines := []string{
-		fmt.Sprintf("## Flake hunt: `%s`", man.HuntID),
+		"## Flake hunt: `" + man.HuntID + "`",
 		"",
-		fmt.Sprintf("- Profile: `%s`", strings.Join(man.Command, " ")),
+		"- Profile: `" + strings.Join(man.Command, " ") + "`",
 		fmt.Sprintf("- Rounds: %d", man.Rounds),
 		fmt.Sprintf("- Failed rounds: %d", man.FailedRounds),
 		fmt.Sprintf("- Anomalous rounds: %d", man.AnomalyRounds),
