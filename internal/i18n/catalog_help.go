@@ -181,7 +181,7 @@ wx run を subdirectory から呼んでも command は workspace の top で実�
   --resume <wx-session-id>       以前の wx session の worktree を復元`,
 	},
 	"help.command.new": {
-		EN: `Usage: wx new [--branch <branch|repo=branch>] [--json]
+		EN: `Usage: wx new [--branch <branch|repo=branch>] [--commit <oid|repo=oid>] [--json]
 
 Lease a managed wx workspace and print its path on one line. Nothing is
 started in it, so this is how an agent prepares a worktree to hand to a
@@ -203,8 +203,10 @@ slots, or by --json here.
 
 Options:
   --branch <branch|repo=branch>  choose a detached base (repeatable)
+  --commit <oid|repo=oid>        use a local commit as the detached base
+                                 (repeatable; run git fetch first)
   --json                         print the session id and path as JSON`,
-		JA: `使い方: wx new [--branch <branch|repo=branch>] [--json]
+		JA: `使い方: wx new [--branch <branch|repo=branch>] [--commit <oid|repo=oid>] [--json]
 
 管理された wx workspace を貸し出し、path を1行で表示します。何も
 起動しないため、agent が SubAgent に渡す worktree を準備する方法です。
@@ -219,6 +221,8 @@ wx release と wx shell --resume に渡す session id は wx slots または
 
 オプション:
   --branch <branch|repo=branch>  detached base を選択（複数指定可）
+  --commit <oid|repo=oid>        ローカルにある commit を detached base にする
+                                 （複数指定可。未取得なら先に git fetch）
   --json                         session id と path を JSON で表示`,
 	},
 	"help.command.release": {

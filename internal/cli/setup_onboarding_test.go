@@ -96,7 +96,7 @@ func TestInteractiveInitialSetupForcesColdAndContinuesLease(t *testing.T) {
 		setupIsTerminal, setupSelect, setupPromptSaver = originalTerminal, originalSelect, originalSaver
 	})
 	stdout := captureLeaseStdout(t, func() {
-		if exit := client.RunLeaseNew(ctx, nil, false); exit != 0 {
+		if exit := client.RunLeaseNew(ctx, nil, nil, false); exit != 0 {
 			t.Fatalf("RunLeaseNew exit=%d", exit)
 		}
 	})
@@ -146,7 +146,7 @@ func TestInteractiveInitialSetupSavesPromptAndReturnsLease(t *testing.T) {
 		setupIsTerminal, setupSelect, setupPromptSaver = originalTerminal, originalSelect, originalSaver
 	})
 	stdout := captureLeaseStdout(t, func() {
-		if exit := client.RunLeaseNew(ctx, nil, false); exit != 0 {
+		if exit := client.RunLeaseNew(ctx, nil, nil, false); exit != 0 {
 			t.Fatalf("RunLeaseNew exit=%d", exit)
 		}
 	})

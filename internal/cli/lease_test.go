@@ -144,7 +144,7 @@ func TestRunLeaseNewPrintsThePathWithoutFollowingTheProcess(t *testing.T) {
 	t.Setenv("WX_SESSION_ID", "owner")
 	t.Setenv("WX_SESSION_TOKEN", "owner-token")
 	stdout := captureLeaseStdout(t, func() {
-		if exit := client.RunLeaseNew(ctx, nil, false); exit != 0 {
+		if exit := client.RunLeaseNew(ctx, nil, nil, false); exit != 0 {
 			t.Fatalf("RunLeaseNew exit=%d", exit)
 		}
 	})
@@ -168,7 +168,7 @@ func TestRunLeaseNewPrintsThePathWithoutFollowingTheProcess(t *testing.T) {
 	}
 	// --json は session ID とパスだけを出し、session token は出さない。
 	stdout = captureLeaseStdout(t, func() {
-		if exit := client.RunLeaseNew(ctx, nil, true); exit != 0 {
+		if exit := client.RunLeaseNew(ctx, nil, nil, true); exit != 0 {
 			t.Fatalf("RunLeaseNew --json exit=%d", exit)
 		}
 	})
@@ -192,7 +192,7 @@ func TestRunLeaseNewReturnsTheLeaseWhenPreparationFails(t *testing.T) {
 	handler.lease.Ready = false
 	handler.waitReadyErr = errors.New("injected preparation failure")
 	stdout := captureLeaseStdout(t, func() {
-		if exit := client.RunLeaseNew(ctx, nil, false); exit != 1 {
+		if exit := client.RunLeaseNew(ctx, nil, nil, false); exit != 1 {
 			t.Fatalf("RunLeaseNew exit=%d, want 1", exit)
 		}
 	})
@@ -236,7 +236,7 @@ func TestLeaseCommandsPropagateWorktreePolicyGuidance(t *testing.T) {
 	var stderr string
 	stdout := captureLeaseStdout(t, func() {
 		stderr = captureStderrForLease(t, func() {
-			code = client.RunLeaseNew(ctx, nil, true)
+			code = client.RunLeaseNew(ctx, nil, nil, true)
 		})
 	})
 	if code != 1 {

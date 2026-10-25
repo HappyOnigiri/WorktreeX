@@ -23,6 +23,9 @@ type leaseAttrs struct {
 	ForceCold bool
 	// Prepare はこの貸出で準備する slot にだけ効く設定の上書きで、`wx bench` の設定比較が使う。
 	Prepare config.PrepareOverride
+	// Commits は `wx new --commit` の `[repo=]<object 名>` で、branch の指定と並ぶ起点の指定である。
+	// 起点の解決にしか使わないが、branches 引数を持つ貸出経路の呼び出し全体を変えずに運ぶためここに置く。
+	Commits []string
 }
 
 // withPrepareOverride は貸出要求の準備設定上書きを検証して attrs へ載せる。

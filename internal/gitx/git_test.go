@@ -471,6 +471,72 @@ func TestResolveRefPropagatesRunnerError(t *testing.T) {
 	}
 }
 
+func TestIsHexObjectNameBoundaries(t *testing.T) {
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{name: "", want: false},
+		{name: "000000", want: false},
+		{name: "0000000", want: true},
+		{name: strings.Repeat("0", 40), want: true},
+		{name: strings.Repeat("0", 41), want: false},
+		{name: "9999999", want: true},
+		{name: "fffffff", want: true},
+		{name: "AAAAAAA", want: true},
+		{name: "FFFFFFF", want: true},
+		{name: "ggggggg", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := IsHexObjectName(test.name); got != test.want {
+				t.Fatalf("IsHexObjectName(%q)=%v, want %v", test.name, got, test.want)
+			}
+		})
+	}
+}
+
+// TestResolveCommitAcceptsOnlyCommitObjects は object 名の解決が ref・tree・不在を commit と取り違えないことを見る。
+func TestResolveCommitAcceptsOnlyCommitObjects(t *testing.T) {
+	repo := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"},
+		{"config", "user.name", "test"},
+		{"config", "user.email", "test@example.com"},
+		{"commit", "-q", "--allow-empty", "-m", "first"},
+		{"commit", "-q", "--allow-empty", "-m", "second"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	head := gitOutput(t, repo, "rev-parse", "HEAD")
+	ctx := context.Background()
+	for _, name := range []string{head, head[:7], strings.ToUpper(head[:12])} {
+		oid, found, err := ResolveCommit(ctx, &Runner{}, repo, name)
+		if err != nil || !found || oid != head {
+			t.Fatalf("ResolveCommit(%q)=(%q, %v, %v), want (%q, true, nil)", name, oid, found, err, head)
+		}
+	}
+	if oid, found, err := ResolveCommit(ctx, &Runner{}, repo, strings.Repeat("0", 40)); err != nil || found || oid != "" {
+		t.Fatalf("missing commit=(%q, %v, %v), want (\"\", false, nil)", oid, found, err)
+	}
+	// 16 進だけの branch 名は rev-parse が ref として引くため、object 名として受け付けない。
+	gitOutput(t, repo, "branch", "deadbeef", "HEAD~1")
+	if _, found, err := ResolveCommit(ctx, &Runner{}, repo, "deadbeef"); err == nil || found {
+		t.Fatalf("hex branch name=(found=%v, err=%v), want an error", found, err)
+	}
+	tree := gitOutput(t, repo, "rev-parse", "HEAD^{tree}")
+	if _, found, err := ResolveCommit(ctx, &Runner{}, repo, tree); err == nil || found {
+		t.Fatalf("tree object=(found=%v, err=%v), want an error", found, err)
+	}
+	if _, _, err := ResolveCommit(ctx, &Runner{}, repo, "HEAD~1"); err == nil {
+		t.Fatal("revision expression was accepted as an object name")
+	}
+}
+
 func gitOutput(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)

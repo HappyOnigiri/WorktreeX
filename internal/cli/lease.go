@@ -151,11 +151,13 @@ type leaseNewReply struct {
 // RunLeaseNew は貸出してパスを 1 行出力する。呼び出しプロセスには随伴しない。
 // path を渡せた貸出は Release を送らず heartbeat も張らないため、返却は親 session の終了・
 // wx release・lease.ttl の 3 つになる。渡せないまま終わるとき（失敗・signal による中断）だけ、その場で返却する。
-func (c Client) RunLeaseNew(ctx context.Context, branches []string, jsonOut bool) int {
-	return c.RunLeaseNewFrom(ctx, "", branches, jsonOut)
+func (c Client) RunLeaseNew(ctx context.Context, branches, commits []string, jsonOut bool) int {
+	return c.RunLeaseNewFrom(ctx, "", branches, commits, jsonOut)
 }
 
-func (c Client) RunLeaseNewFrom(ctx context.Context, cwd string, branches []string, jsonOut bool) int {
+// RunLeaseNewFrom は cwd を起点に RunLeaseNew と同じ貸出をする。
+// commits は `[repo=]<object 名>` の起点指定で、git worktree add の起点に OID を書いた呼び出しの書き換え先になる。
+func (c Client) RunLeaseNewFrom(ctx context.Context, cwd string, branches, commits []string, jsonOut bool) int {
 	if cwd == "" {
 		var err error
 		cwd, err = os.Getwd()
@@ -190,7 +192,7 @@ func (c Client) RunLeaseNewFrom(ctx context.Context, cwd string, branches []stri
 		language = c.Config.LanguageForRPC()
 	}
 	params := rpc.ResolveAndLeaseParams{
-		Agent: leaseAgentKindPath, Branches: branches, ClientPID: 0, CWD: cwd, ForceCold: decision.ForceCold, ForceWorktree: c.forceWorktree,
+		Agent: leaseAgentKindPath, Branches: branches, ClientPID: 0, Commits: commits, CWD: cwd, ForceCold: decision.ForceCold, ForceWorktree: c.forceWorktree,
 		LeaseKind: state.LeaseKindPath, LeaseOwnerSessionID: ownerID, LeaseOwnerToken: ownerToken, LeaseOwnerPID: leaseOwnerPIDFromEnvironment(),
 		Language: language,
 	}

@@ -190,6 +190,70 @@ func TestResolveBranchesRejectsAmbiguousAndMissingSpecifications(t *testing.T) {
 	}
 }
 
+// TestResolveStartPointsPinsCommitsPerRepository は commit の指定がそれを持つ repository だけを固定し、
+// 他の repository は branch の指定か既定 branch のまま解決することを確認する。
+func TestResolveStartPointsPinsCommitsPerRepository(t *testing.T) {
+	root := t.TempDir()
+	a := initRepo(t, filepath.Join(root, "a"))
+	b := initRepo(t, filepath.Join(root, "b"))
+	base := gitOut(t, a, "rev-parse", "HEAD")
+	git(t, a, "commit", "--allow-empty", "-m", "advance")
+	git(t, b, "branch", "feature")
+	w := discovery.Workspace{Repositories: []discovery.Repository{
+		{ID: "a", MainPath: domain.CanonicalPath(a), RelativePath: "a", DefaultBranch: "main"},
+		{ID: "b", MainPath: domain.CanonicalPath(b), RelativePath: "b", DefaultBranch: "main"},
+	}}
+	ctx, runner := context.Background(), &gitx.Runner{}
+	r, err := ResolveStartPoints(ctx, runner, w, nil, []string{base[:10]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r[0].OID != base || r[0].RequestedRef != base || r[1].OID != gitOut(t, b, "rev-parse", "main") {
+		t.Fatalf("global commit resolved=%+v, want a pinned to %s and b on its default branch", r, base)
+	}
+	r, err = ResolveStartPoints(ctx, runner, w, []string{"feature"}, []string{"a=" + base})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r[0].OID != base || r[1].RequestedRef != "feature" {
+		t.Fatalf("qualified commit with global branch resolved=%+v", r)
+	}
+}
+
+func TestResolveStartPointsRejectsUnusableCommitSpecifications(t *testing.T) {
+	root := t.TempDir()
+	a := initRepo(t, filepath.Join(root, "a"))
+	b := initRepo(t, filepath.Join(root, "b"))
+	head := gitOut(t, a, "rev-parse", "HEAD")
+	w := discovery.Workspace{Repositories: []discovery.Repository{
+		{ID: "a", MainPath: domain.CanonicalPath(a), RelativePath: "a", DefaultBranch: "main"},
+		{ID: "b", MainPath: domain.CanonicalPath(b), RelativePath: "b", DefaultBranch: "main"},
+	}}
+	missing := strings.Repeat("0", 40)
+	tests := []struct {
+		name              string
+		branches, commits []string
+		want              string
+	}{
+		{name: "revision expression", commits: []string{"HEAD~1"}, want: "hexadecimal object name"},
+		{name: "unknown selector", commits: []string{"c=" + head}, want: "commit selector"},
+		{name: "two global commits", commits: []string{head, head[:7]}, want: "multiple global commit"},
+		{name: "same repository twice", commits: []string{"a=" + head, "a=" + head[:7]}, want: "multiple commit specifications"},
+		{name: "branch and commit for one repository", branches: []string{"a=main"}, commits: []string{"a=" + head}, want: "both a branch and a commit"},
+		{name: "global branch and global commit", branches: []string{"main"}, commits: []string{head}, want: "global branch and a global commit"},
+		{name: "missing qualified commit", commits: []string{"b=" + missing}, want: "git fetch origin " + missing},
+		{name: "missing global commit", commits: []string{missing}, want: "does not exist in any repository (a, b)"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := ResolveStartPoints(context.Background(), &gitx.Runner{}, w, test.branches, test.commits)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error=%v, want it to contain %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestResolveBranchesPropagatesGlobalResolutionFailure(t *testing.T) {
 	root := t.TempDir()
 	w := discovery.Workspace{Repositories: []discovery.Repository{{ID: "repository", MainPath: domain.CanonicalPath(filepath.Join(root, "missing")), RelativePath: "repository", DefaultBranch: "main"}}}

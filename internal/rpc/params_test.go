@@ -38,6 +38,11 @@ func TestResolveAndLeaseParamsMarshalsLegacyBytes(t *testing.T) {
 			params: ResolveAndLeaseParams{ForceCold: true},
 			want:   `{"agent":"","branches":null,"client_pid":0,"cwd":"","force_cold":true,"force_worktree":false,"lease_kind":"","lease_owner_session_id":"","lease_owner_token":"","prepare_copy_mode":"","prepare_cow_min_size_kib":null}`,
 		},
+		{
+			name:   "commits",
+			params: ResolveAndLeaseParams{Commits: []string{"server=3139d39"}},
+			want:   `{"agent":"","branches":null,"client_pid":0,"commits":["server=3139d39"],"cwd":"","force_worktree":false,"lease_kind":"","lease_owner_session_id":"","lease_owner_token":"","prepare_copy_mode":"","prepare_cow_min_size_kib":null}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

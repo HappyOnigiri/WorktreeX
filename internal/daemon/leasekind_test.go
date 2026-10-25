@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/HappyOnigiri/WorktreeX/internal/config"
+	"github.com/HappyOnigiri/WorktreeX/internal/rpc"
 	"github.com/HappyOnigiri/WorktreeX/internal/state"
 )
 
@@ -463,6 +465,47 @@ func TestLeaseRefusesWorkspacesConfiguredWithoutAWorktree(t *testing.T) {
 	// agent 起動は従来どおり、貸出の許可がないという既存の失敗で断られる。
 	if _, err := f.Manager.leaseWithPolicy(ctx, repo, nil, "codex", os.Getpid(), false, leaseAttrs{}); err == nil || IsWorktreeDisabled(err) {
 		t.Fatalf("agent lease error=%v, want the existing authorization failure", err)
+	}
+}
+
+// TestCommitLeaseChecksOutTheRequestedCommitDetached は wx new --commit の要求が RPC から貸出まで届き、
+// 既定 branch より古い commit を HEAD とする detached workspace を返すことを確認する。
+// git worktree add の起点に OID を書いた呼び出しは、この経路へ書き換えられる。
+func TestCommitLeaseChecksOutTheRequestedCommitDetached(t *testing.T) {
+	t.Parallel()
+	f, repo := leaseWorktreeFixture(t)
+	ctx := context.Background()
+	base := gitOutput(t, repo, "rev-parse", "HEAD")
+	gitRun(t, repo, "commit", "--allow-empty", "-m", "advance default branch")
+	handler := Handler{Manager: f.Manager}
+	request := func(commit string) (any, error) {
+		raw, err := json.Marshal(rpc.ResolveAndLeaseParams{Agent: "wx-path", CWD: repo, LeaseKind: state.LeaseKindPath, Commits: []string{commit}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return handler.dispatch(ctx, "ResolveAndLease", raw)
+	}
+	result, err := request(base[:12])
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, ok := result.(Lease)
+	if !ok {
+		t.Fatalf("ResolveAndLease result type=%T", result)
+	}
+	if err := waitReady(ctx, f.Manager, 10*time.Second, lease.SessionID, lease.Token); err != nil {
+		t.Fatal(err)
+	}
+	if head := gitOutput(t, lease.Path, "rev-parse", "HEAD"); head != base {
+		t.Fatalf("leased HEAD=%s, want requested commit %s", head, base)
+	}
+	if branch := gitOutput(t, lease.Path, "rev-parse", "--abbrev-ref", "HEAD"); branch != "HEAD" {
+		t.Fatalf("leased worktree is attached to %q, want detached", branch)
+	}
+	// 未取得の commit は fetch せずに断り、先に fetch する案内を返す。
+	missing := strings.Repeat("0", 40)
+	if _, err := request(missing); err == nil || !strings.Contains(err.Error(), "git fetch origin "+missing) {
+		t.Fatalf("missing commit error=%v, want fetch guidance", err)
 	}
 }
 

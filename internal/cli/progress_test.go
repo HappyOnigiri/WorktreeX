@@ -42,7 +42,7 @@ func TestLeaseProgressIsNotPolledWithoutATerminal(t *testing.T) {
 	handler.lease.Route = daemon.RouteColdStart
 	handler.mu.Unlock()
 	stdout := captureLeaseStdout(t, func() {
-		if exit := client.RunLeaseNew(ctx, nil, false); exit != 0 {
+		if exit := client.RunLeaseNew(ctx, nil, nil, false); exit != 0 {
 			t.Fatalf("RunLeaseNew exit=%d", exit)
 		}
 	})
