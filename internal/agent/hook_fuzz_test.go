@@ -24,6 +24,8 @@ func FuzzHookPayload(f *testing.F) {
 		`{"cwd":"/wx/slot","tool_input":{"command":"grep -rn \"worktree add\" ."}}`,
 		`{"cwd":"/wx/slot","tool_input":{"command":"git worktree add '"}}`,
 		`{"cwd":"/wx/slot","tool_input":{"command":"git worktree add x $(git rev-parse HEAD)"}}`,
+		`{"cwd":"/wx/slot","tool_input":{"command":"git worktree add --detach /abs/wt 3139d39"}}`,
+		`{"cwd":"/wx/slot","tool_input":{"command":"WT=/x; git worktree add --detach \"$WT\" 3139d39 && cd \"$WT\""}}`,
 	} {
 		f.Add([]byte(seed))
 	}
@@ -85,16 +87,37 @@ func checkWorktreeAddHookOutput(t *testing.T, payload []byte) {
 		if err := json.Unmarshal(specific.UpdatedInput["command"], &command); err != nil {
 			t.Fatalf("updatedInput has no string command: %v", err)
 		}
-		if command != "wx new" && !strings.HasPrefix(command, "wx new --branch ") {
+		if specific.AdditionalContext == compoundRewriteContext {
+			checkCompoundRewrite(t, command)
+			return
+		}
+		// fuzz の cwd と root は実在しないので、git -C を cd へ写す書き換えは起こらない。
+		if !strings.HasPrefix(command, "wx new") {
 			t.Fatalf("rewritten command=%q", command)
 		}
 		if strings.ContainsAny(command, "\"'`$\\;&|<>()\n\r\t") {
 			t.Fatalf("rewritten command needs quoting: %q", command)
 		}
-		if fields := strings.Fields(command); len(fields) != 2 && len(fields) != 4 {
+		fields := strings.Fields(command)
+		if len(fields) != 2 && (len(fields) != 4 || (fields[2] != "--branch" && fields[2] != "--commit")) {
 			t.Fatalf("rewritten command has an unexpected shape: %q", command)
 		}
 	default:
 		t.Fatalf("unexpected permissionDecision %q", specific.PermissionDecision)
+	}
+}
+
+// checkCompoundRewrite は連結の書き換えが切り貼りで構文を壊さず、git worktree add を残さないことを確かめる。
+func checkCompoundRewrite(t *testing.T, command string) {
+	t.Helper()
+	if !strings.Contains(command, "=$(wx new") {
+		t.Fatalf("compound rewrite has no wx new assignment: %q", command)
+	}
+	tokens, ok := lexPolicyCommand(command)
+	if !ok {
+		t.Fatalf("compound rewrite is not well formed: %q", command)
+	}
+	if candidates, _ := scanCompoundTokens(tokens); candidates != 0 {
+		t.Fatalf("compound rewrite still runs git worktree add: %q", command)
 	}
 }

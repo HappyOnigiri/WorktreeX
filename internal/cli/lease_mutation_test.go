@@ -64,7 +64,7 @@ func TestRunLeaseFromMutationBoundariesSkipsPolicyForResume(t *testing.T) {
 func TestLeaseNewMutationBoundariesKeepCWDAndReadinessNotice(t *testing.T) {
 	client, handler, base, ctx := leaseFixture(t)
 	stderr := captureStderrForLease(t, func() {
-		if got := client.RunLeaseNewFrom(ctx, "", nil, true); got != 0 {
+		if got := client.RunLeaseNewFrom(ctx, "", nil, nil, true); got != 0 {
 			t.Fatalf("new --json exit=%d", got)
 		}
 	})
@@ -83,7 +83,7 @@ func TestLeaseNewMutationBoundariesDoNotRenderSetupForAnEmptyCheck(t *testing.T)
 	handler.lease.Ready = false
 	handler.waitReadyErr = errors.New("injected readiness failure")
 	stderr := captureStderrForLease(t, func() {
-		if got := client.RunLeaseNew(ctx, nil, true); got != 1 {
+		if got := client.RunLeaseNew(ctx, nil, nil, true); got != 1 {
 			t.Fatalf("new failure exit=%d", got)
 		}
 	})

@@ -29,8 +29,8 @@ internal/sessions/tui/picker.go	ast-v1:15c207a1918111fb3d1d24f0a4e0a39ab084daea8
 internal/sessions/tui/picker.go	ast-v1:72b5bfaf30efa8e1ce92421238f0b9054bd58f3be000b4c9f23143de6b3c3a41	moveTo は直後の ensureVisible で選択値を表示範囲へ clamp するため、上限値の - と + は同じ選択結果になる等価変異。
 internal/rpc/protocol.go	ast-v1:e68ff49e22bf414188e7376eef3a19c073559bba4abc4f348c724ef550cfc70b	ConnectRetry==0ではretryUntilを呼び出し開始前に設定するため、<=を<へ変えても期限判定が必ず終了し、観測可能な挙動が変わらない等価変異。
 internal/i18n/message.go	ast-v1:5c04663a702f249fb1630a9491845749061f26254f145c77943e2cb76ca9a7c8	len(data)==0ではentriesが無く、mapの空コピーによるallocation差だけでLocalizeの表示結果は変わらないため
-internal/pool/branch.go	ast-v1:09c8046bdd67e42712f53eca26837bf67fac8d666d99a9b1f16ebae135858eee	matchedは0との比較にのみ使うため、正のcountを負へ変えても分岐結果は変わらず、repository数の整数overflowも不可能なため
-internal/pool/branch.go	ast-v1:ff119c6e46cddf52c40f841f94ca109512cd2eb967c4fb52bdaaa59a5df186da	matched==0のlen(applicable)==1は直前の分岐で処理済みのため、後続の>1を>=1へ変えても到達結果は変わらないため
+internal/pool/branch.go	ast-v1:7da125fe675a0afd176c60520674f86edb2ca1cc0903e73f7acbc284e23c04f8	matchedは0との比較にのみ使うため、正のcountを負へ変えても分岐結果は変わらず、repository数の整数overflowも不可能なため
+internal/pool/branch.go	ast-v1:0f8e102c6b897f4d0e94dc24f3b7c72f2776e74518ffa040d9b845d542a42f4c	matched==0のlen(applicable)==1は直前の分岐で処理済みのため、後続の>1を>=1へ変えても到達結果は変わらないため
 internal/workspace/cow_place.go	ast-v1:83de7f2fd36878bc475a55dc0c12a68602da0f262cb6f90de072f4b61d1c8db4	An empty LFS OID set returns from readCOWLFSBlobPointers before any Git or filesystem operation, so > and >= are observationally equivalent.
 internal/workspace/cow_index.go	ast-v1:70e1ad721781f13a534762414a62571d7b4fdc2a76dbd45c33f19d043f766f31	rewritten map は結果の候補集合ではなく make の初期 capacity にだけ使うため、nil 判定を反転しても戻り値と内容は変わらない等価変異
 internal/workspace/cow_place.go	ast-v1:e7b37c196d341f4c3826576b897c3eea7f5b2a7434a23f550860cace76c91caf	共有接頭辞の再利用は open/close の回数だけを変え、各 path の descriptor と配置結果は変わらないため、比較子の反転は観測可能な差がない
@@ -65,9 +65,9 @@ internal/daemon/server.go	ast-v1:b7da50cfe01497a3924078e6f1cd2cc01c970daaadc8e1b
 internal/daemon/status.go	ast-v1:37ca55ee6d0c689820ae9f59f493dc0a8523e430e97b0ee13b2ddc4314ce4274	root一覧はpathをkeyにしたmapから作るため同じpathの別要素は存在せず、同一要素の比較を < から <= に変えても並び順は変わらない
 internal/daemon/unmanaged_artifacts.go	ast-v1:be48faf846105672185c66fa852a86bf6eba44bcd3e9430f75be52ecbffa58e9	列挙対象は実体pathごとに一意であり同じpath同士の比較は発生しないため、< と <= の結果に観測可能な差がない
 internal/daemon/usage.go	ast-v1:c59725973128eae5b9923c9230527cef3a71e7b57f481d76e5fdb5a4f10e3d5e	削除量と合計が等しい場合は分岐して0を返しても減算して0になっても結果が同じで、>= と > の変更に観測可能な差がない
-internal/agent/worktree_rewrite.go	ast-v1:fcea7b0df81519360267defb4603f807a4df85f9cac05fa91324ed55bf38dda3	candidates は segment ごとに高々1回だけ増え、candidates > 1 は len(segments) > 1 と同時に必ず真になるため、++ を -- に変えても判定結果が変わらない。
-internal/agent/worktree_rewrite.go	ast-v1:eba1e03f5b0bde81752749490943db5fda2a9ba45c939a657498a84c0535f9f7	flags 分岐に入る value は必ず '-' で始まるため、strings.Index(name, "=") が 0 になる経路がなく、> 0 と >= 0 は等価である。
-internal/agent/worktree_rewrite.go	ast-v1:9ca60cbbfccab98cf51c03acae5928122a45aee69c59dff32c39cacbfe274365	flags 分岐に入る name は必ず '-' で始まるため、strings.Index(name, "=") が 0 になる経路がなく、> 0 と >= 0 は等価である。
+internal/agent/worktree_rewrite.go	ast-v1:5600e48d4960324d5ba9aa9f3534c843df8adba713009a5359f923c3f83c5c87	candidates は segment ごとに高々1回だけ増え、candidates > 1 は len(segments) > 1 と同時に必ず真になるため、++ を -- に変えても判定結果が変わらない。
+internal/agent/worktree_rewrite.go	ast-v1:8b29a4a67385be53b486d332d58eb93c75aaae593a4c91f784225f3023676993	flags 分岐に入る value は必ず '-' で始まるため、strings.Index(name, "=") が 0 になる経路がなく、> 0 と >= 0 は等価である。
+internal/agent/worktree_rewrite.go	ast-v1:32a1300ce750d95bfda4b186fdb5686ab082668ccc99b8272f36f8e07c53bb86	flags 分岐に入る name は必ず '-' で始まるため、strings.Index(name, "=") が 0 になる経路がなく、> 0 と >= 0 は等価である。
 internal/dashboard/view.go	ast-v1:0da5ceffad511750a8ea2456dd2efa101dbda1f57eb03e9a141b96ea25a0d4d0	rightWidth は leftColumnWidth の上限により minRightColumn との等号へ到達しない
 internal/dashboard/view.go	ast-v1:11e735762a5746bb547b63240cb42eed52c7335394887f58a6ffca07aec1f156	表示幅がちょうど収まる wrap は折り返しても同じ1行になり比較が同値
 internal/dashboard/view.go	ast-v1:fac2ffee876d33541f57204195fa77d83234cb55679d294db36e4b1bcc2c15a4	表示幅と等しい padANSI は padding 0 の分岐と同じ文字列を返す
@@ -124,8 +124,7 @@ internal/daemon/roots.go	ast-v1:877ebe59c367d2a810f1e0c5af35b3e40fbd9c8ef7d81add
 internal/daemon/roots.go	ast-v1:97b0a350b832cc99d3eb75b2bf348d32acd6b48544792218d36ba027a64cb3a4	この符号は rootForPath の同じ長さの候補順だけを変える。path を含む root は同じ長さの別 root と両立せず、返す root を変えない
 internal/setup/message.go	ast-v1:a92297fd49cfed9993f1883a6e9997c4fdc97d46642859a7fdadd55e195e07f7	pairs の map 初期容量だけを決める除算で、乗算へ変えても収集する key/value と戻り値は変わらないため等価変異
 internal/sessions/scanner/parse.go	ast-v1:fce68a45baeb42b6d093187f4b2e30caabb0b38845706e17db43fdbc282efbe2	JSONL reader の初期 buffer サイズだけが変わり、ReadBytes の内容・解析結果・エラー契約は変わらないため等価変異
-internal/pool/branch.go	ast-v1:40c742ffe881733f4fc5f59324cff0ae08711ef9d98b15c4e2e012185d9c0a80	fetchDefault と空の specs は fetch 経路へ入った直後の !ok 分岐でのみ評価され、反転しても後続は同じ MissingDefaultBranchError になるため等価変異
-internal/pool/branch.go	ast-v1:da6ab11e24d26ed3d87bb1f778e117438b34a10712d30e1533680aef2fc2e437	branch が空なら先行する branch == "" の検査で return 済みで、この分岐へ到達する repo.DefaultBranch == "" の経路がないため等価変異
+internal/pool/branch.go	ast-v1:5a3843a3ca9253abdd261bb96037630332bb76a6a840cde352df38f7d4c9364a	branch が空なら先行する branch == "" の検査で return 済みで、この分岐へ到達する repo.DefaultBranch == "" の経路がないため等価変異
 internal/archive/conflict.go	ast-v1:58c5b3b9fbd408d44c3af82626c3991c8626c5cc3a2e129666f61a0526681dc2	path が異なる場合だけ比較する分岐の内側なので、< と <= は同じ順序になる等価変異
 internal/archive/force_added.go	ast-v1:1114ad3a843732d34cf4b59029f0129fe4b8318c391fbeee07cbd79383f53d4e	tab が 0 の場合は変異前後どちらも空 metadata を field 数検査で拒否するため、< 0 と <= 0 は同じ動作になる等価変異
 internal/agent/branch_attach_shell.go	ast-v1:a3c3a8f327c99e799f96d418a19625286fbccca4fdf2799db10302ede6bc6d81	IndexAnyで位置0に一致するのは区切り文字だけで、`}`でも本文が空となり、end < 0 と end <= 0 は同じfalseを返す等価変異

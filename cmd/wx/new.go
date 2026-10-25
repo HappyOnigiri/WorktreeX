@@ -18,6 +18,7 @@ func runNewFrom(ctx context.Context, args []string, cwd string) int {
 	ctx = commandContext(ctx)
 	fs := pflag.NewFlagSet("new", pflag.ContinueOnError)
 	branches := fs.StringArray("branch", nil, "detached base branch")
+	commits := fs.StringArray("commit", nil, "detached base commit")
 	jsonOut := fs.Bool("json", false, "print JSON")
 	fs.Usage = func() { commandUsageLanguage(os.Stdout, "new", i18n.LanguageFromContext(ctx)) }
 	if code, done := finishFlagParse(fs, "new", args); done {
@@ -32,7 +33,7 @@ func runNewFrom(ctx context.Context, args []string, cwd string) int {
 		return code
 	}
 	if cwd != "" {
-		return client.RunLeaseNewFrom(ctx, cwd, *branches, *jsonOut)
+		return client.RunLeaseNewFrom(ctx, cwd, *branches, *commits, *jsonOut)
 	}
-	return client.RunLeaseNew(ctx, *branches, *jsonOut)
+	return client.RunLeaseNew(ctx, *branches, *commits, *jsonOut)
 }

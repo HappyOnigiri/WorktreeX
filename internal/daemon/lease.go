@@ -125,17 +125,19 @@ func (m *Manager) leaseWorkspace(ctx context.Context, w discovery.Workspace, bra
 	// 補充はこの貸出を根拠に hot / cold を決める。last_leased_at を書く前に並走されても cold と判定させない。
 	endLease := m.beginWorkspaceLease(string(w.ID))
 	defer endLease()
-	resolved, err := m.resolveBranches(ctx, w, branches)
+	resolved, err := m.resolveStartPoints(ctx, w, branches, attrs.Commits)
 	if err != nil {
 		return Lease{}, err
 	}
+	// branch か commit を明示した貸出の不一致は、既定 branch 向けの待機枠を STALE にする根拠にならない。
+	explicit := len(branches) > 0 || len(attrs.Commits) > 0
 	// 明示された ForceCold と準備設定の上書きを伴う貸出は必ず cold start にする。
 	// 既存 worktree の再利用や差分更新では上書きが準備の一部にしか効かず、測る対象が上書きの効果にならない。
 	// 上書きを混ぜた fingerprint を持つ slot も、この経路を通らないため通常の貸出へ紛れない。
 	cold = cold || attrs.ForceCold || !attrs.Prepare.IsZero()
 	reuseStandby, _ := m.Config().ReuseStandbyForWorkspace(string(w.Root))
 	if !cold && reuseStandby {
-		return m.leaseReusableStandby(ctx, w, resolved, generation, branches, agent, pid, attrs)
+		return m.leaseReusableStandby(ctx, w, resolved, generation, explicit, agent, pid, attrs)
 	}
 	attempts, budget := 0, 0
 	if !cold {
@@ -223,7 +225,7 @@ func (m *Manager) leaseWorkspace(ctx context.Context, w discovery.Workspace, bra
 			}
 			// tracked変更は再試行で消えないため、貸出を失敗させずにSTALEへ落とし、
 			// 残るREADYかcold startで応答する。幽霊READYを次の保守tickまで残さない。
-			if errors.Is(leaseErr, workspace.ErrTrackedChanges) && len(branches) == 0 {
+			if errors.Is(leaseErr, workspace.ErrTrackedChanges) && !explicit {
 				_ = m.store.SetSlotState(ctx, ready.ID, []string{"READY"}, "STALE", "READY_VALIDATION_FAILED")
 				m.log.Info("ready standby retired after tracked changes were found", "workspace_id", w.ID, "slot_id", ready.ID, "reason", leaseErr)
 				continue
@@ -233,7 +235,7 @@ func (m *Manager) leaseWorkspace(ctx context.Context, w discovery.Workspace, bra
 		if leased {
 			return lease, nil
 		}
-		if len(branches) > 0 {
+		if explicit {
 			break
 		}
 		mismatch := m.describeReadyMismatch(ctx, ready, resolved)
@@ -247,7 +249,8 @@ func (m *Manager) leaseWorkspace(ctx context.Context, w discovery.Workspace, bra
 	return m.allocate(ctx, w, resolved, generation, agent, pid, attrs, "STARTING", "")
 }
 
-func (m *Manager) leaseReusableStandby(ctx context.Context, w discovery.Workspace, resolved []pool.Resolved, generation int, branches []string, agent string, pid int, attrs leaseAttrs) (Lease, error) {
+// explicit は branch か commit の指定がある貸出で、既定 branch 向けの待機枠を STALE にしない。
+func (m *Manager) leaseReusableStandby(ctx context.Context, w discovery.Workspace, resolved []pool.Resolved, generation int, explicit bool, agent string, pid int, attrs leaseAttrs) (Lease, error) {
 	candidates, err := m.store.ReadySlots(ctx, string(w.ID))
 	if err != nil {
 		return Lease{}, err
@@ -259,7 +262,7 @@ func (m *Manager) leaseReusableStandby(ctx context.Context, w discovery.Workspac
 			if errors.Is(matchErr, state.ErrOwnership) && !errors.Is(matchErr, state.ErrSlotStateIneligible) {
 				m.quarantineOwnershipFailure(candidate.ID, []string{"READY"}, matchErr)
 			}
-			if errors.Is(matchErr, workspace.ErrTrackedChanges) && len(branches) == 0 {
+			if errors.Is(matchErr, workspace.ErrTrackedChanges) && !explicit {
 				_ = m.store.SetSlotState(ctx, candidate.ID, []string{"READY"}, "STALE", "READY_VALIDATION_FAILED")
 				m.log.Info("ready standby retired after tracked changes were found", "workspace_id", w.ID, "slot_id", candidate.ID, "reason", matchErr)
 			}
@@ -288,13 +291,13 @@ func (m *Manager) leaseReusableStandby(ctx context.Context, w discovery.Workspac
 				m.quarantineOwnershipFailure(candidate.ID, []string{"READY"}, updateErr)
 			case standbyStateRace(updateErr):
 				m.log.Info("standby update candidate lost to a concurrent transition", "workspace_id", w.ID, "slot_id", candidate.ID, "reason", updateErr)
-			case errors.Is(updateErr, workspace.ErrTrackedChanges) && len(branches) == 0:
+			case errors.Is(updateErr, workspace.ErrTrackedChanges) && !explicit:
 				// tracked変更は貸出を跨いで残るため、READYのままだと毎回棄却してcold startを払い、
 				// 次の保守tickまでstatusのreadyにも数えられ続ける。更新不適格と同じくSTALEにして補充へ回す。
 				// --branch指定を除く理由も同じで、main向けstandbyをbranch要求のために捨てない。
 				_ = m.store.SetSlotState(ctx, candidate.ID, []string{"READY"}, "STALE", "READY_VALIDATION_FAILED")
 				m.log.Info("standby retired after tracked changes were found", "workspace_id", w.ID, "slot_id", candidate.ID, "reason", updateErr)
-			case errors.Is(updateErr, workspace.ErrUpdateIneligible) && len(branches) == 0:
+			case errors.Is(updateErr, workspace.ErrUpdateIneligible) && !explicit:
 				// 更新不適格なstandbyは残しても毎回cold startになるだけなので、非reuse経路と同じくSTALEにして補充へ回す。
 				// --branch指定を除くのは、main向けのstandbyをbranch要求のために捨てないためである。
 				_ = m.store.SetSlotState(ctx, candidate.ID, []string{"READY"}, "STALE", "READY_VALIDATION_FAILED")

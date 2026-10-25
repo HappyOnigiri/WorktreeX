@@ -11,6 +11,14 @@ import (
 // fetch は workspace 単位の解決にだけ許可し、明示 branch と復元系の呼び出し側は
 // 従来の pool.ResolveBranches を直接使って fetch を起こさない。
 func (m *Manager) resolveBranches(ctx context.Context, w discovery.Workspace, specs []string) ([]pool.Resolved, error) {
+	return m.resolveStartPoints(ctx, w, specs, nil)
+}
+
+// resolveStartPoints は resolveBranches に commit の指定を加える。commit の指定も明示の起点なので fetch を起こさない。
+func (m *Manager) resolveStartPoints(ctx context.Context, w discovery.Workspace, specs, commits []string) ([]pool.Resolved, error) {
+	if len(commits) != 0 {
+		return pool.ResolveStartPoints(ctx, m.git, w, specs, commits)
+	}
 	fetchDefault, _ := m.Config().FetchDefaultBranchForWorkspace(string(w.Root))
 	if !fetchDefault || len(specs) != 0 {
 		return pool.ResolveBranches(ctx, m.git, w, specs)

@@ -25,16 +25,32 @@ func TestClassifyWorktreeAddCommand(t *testing.T) {
 		{name: "compound", command: "git worktree add x && cd x", decision: worktreeAddDeny, reason: denyReasonCompound},
 		{name: "redirect", command: "git worktree add x > log", decision: worktreeAddDeny, reason: denyReasonCompound},
 		{name: "nested shell", command: `sh -c 'git worktree add x'`, decision: worktreeAddDeny, reason: denyReasonCompound},
-		{name: "other repository", command: "git -C other worktree add x", decision: worktreeAddDeny, reason: denyReasonOtherRepository},
+		// cwd を持たない payload では相対の -C を解決できない。
+		{name: "relative directory without cwd", command: "git -C other worktree add x", decision: worktreeAddDeny, reason: denyReasonDirectory},
+		{name: "directory twice", command: "git -C a -C b worktree add x", decision: worktreeAddDeny, reason: denyReasonUnsupported},
+		{name: "expanded directory", command: `git -C "$CS_ROOT/server" worktree add --detach "$WT" 3139d393c8470d47e7cf30810580acad50a907e7`, decision: worktreeAddDeny, reason: denyReasonExpandedDirectory},
 		{name: "git dir", command: "git --git-dir=/other/.git worktree add x", decision: worktreeAddDeny, reason: denyReasonOtherRepository},
 		{name: "environment assignment", command: "GIT_DIR=/other git worktree add x", decision: worktreeAddDeny, reason: denyReasonOtherRepository},
 		{name: "branch creation", command: "git worktree add -b feature x", decision: worktreeAddDeny, reason: denyReasonBranchCreation},
 		{name: "orphan", command: "git worktree add --orphan x", decision: worktreeAddDeny, reason: denyReasonBranchCreation},
 		{name: "revision expression", command: "git worktree add x HEAD~1", decision: worktreeAddDeny, reason: denyReasonStartPoint},
-		{name: "object name", command: "git worktree add x 1a2b3c4d5e", decision: worktreeAddDeny, reason: denyReasonStartPoint},
+		{name: "object name", command: "git worktree add --detach /abs/wt 3139d393c8470d47e7cf30810580acad50a907e7", decision: worktreeAddRewrite, rewrite: "wx new --commit 3139d393c8470d47e7cf30810580acad50a907e7"},
+		{name: "short object name", command: "git worktree add -q --detach /tmp/wt 801e2e09", decision: worktreeAddRewrite, rewrite: "wx new --commit 801e2e09"},
+		{name: "remote object name", command: "git worktree add x origin/1a2b3c4d5e", decision: worktreeAddDeny, reason: denyReasonStartPoint},
 		{name: "repository selector", command: "git worktree add x repo=main", decision: worktreeAddDeny, reason: denyReasonStartPoint},
 		{name: "unknown flag", command: "git worktree add --lock x", decision: worktreeAddDeny, reason: denyReasonUnsupported},
-		{name: "expansion", command: `git worktree add "$TMPDIR/x"`, decision: worktreeAddDeny, reason: denyReasonUnsupported},
+		// パスは捨てるので、展開があっても書き換える。
+		{name: "expanded path", command: `git worktree add "$TMPDIR/x"`, decision: worktreeAddRewrite, rewrite: "wx new"},
+		{name: "quoted variable path", command: `git worktree add --detach "$WT" origin/main`, decision: worktreeAddRewrite, rewrite: "wx new --branch main"},
+		{name: "unquoted variable path", command: "git worktree add -q --detach $W origin/prod", decision: worktreeAddRewrite, rewrite: "wx new --branch prod"},
+		{name: "command substitution path", command: `git worktree add --detach "$(mktemp -d)/wt" 801e2e09`, decision: worktreeAddRewrite, rewrite: "wx new --commit 801e2e09"},
+		{name: "expanded start point", command: `git worktree add --detach /tmp/wt "$REV"`, decision: worktreeAddDeny, reason: denyReasonExpandedStartPoint},
+		{name: "expanded flag", command: "git worktree add --$MODE /tmp/wt", decision: worktreeAddDeny, reason: denyReasonUnsupported},
+		// パスを変数で後続へ渡す連結は、その変数へ貸出のパスを入れる形に書き換える。
+		{name: "variable path in compound", command: `WT=/tmp/wt; git worktree add --detach "$WT" 3139d393c8470d47e7cf30810580acad50a907e7 && cd "$WT"`, decision: worktreeAddRewrite, rewrite: `WT=/tmp/wt; WT=$(wx new --commit 3139d393c8470d47e7cf30810580acad50a907e7) && echo "WT=$WT" && cd "$WT"`},
+		// 書き換えられない連結は、展開を含んでいても展開ではなく連結を理由に拒否する。
+		{name: "variable path followed by semicolon", command: `WT=/tmp/wt; git worktree add --detach "$WT" 3139d393c8470d47e7cf30810580acad50a907e7; cd "$WT"`, decision: worktreeAddDeny, reason: denyReasonCompound},
+		{name: "branch creation from remote", command: "git worktree add -b feature/x /abs/wt origin/feature/x", decision: worktreeAddDeny, reason: denyReasonBranchCreation},
 		{name: "unterminated quote", command: `git worktree add 'x`, decision: worktreeAddDeny, reason: denyReasonUnsupported},
 		{name: "missing path", command: "git worktree add", decision: worktreeAddDeny, reason: denyReasonUnsupported},
 		{name: "extra positional", command: "git worktree add x main extra", decision: worktreeAddDeny, reason: denyReasonUnsupported},
@@ -62,7 +78,7 @@ func TestClassifyWorktreeAddCommand(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			verdict := classifyWorktreeAddCommand(test.command)
+			verdict := classifyWorktreeAddCommand(test.command, worktreeAddLocation{})
 			if verdict.decision != test.decision {
 				t.Fatalf("decision=%d, want %d (reason=%q command=%q)", verdict.decision, test.decision, verdict.reason, verdict.command)
 			}
@@ -95,28 +111,24 @@ func TestIsAssignmentWordBoundaries(t *testing.T) {
 	}
 }
 
-func TestIsHexObjectNameBoundaries(t *testing.T) {
-	tests := []struct {
-		name string
-		want bool
-	}{
-		{name: "", want: false},
-		{name: "000000", want: false},
-		{name: "0000000", want: true},
-		{name: strings.Repeat("0", 40), want: true},
-		{name: strings.Repeat("0", 41), want: false},
-		{name: "9999999", want: true},
-		{name: "fffffff", want: true},
-		{name: "AAAAAAA", want: true},
-		{name: "FFFFFFF", want: true},
-		{name: "ggggggg", want: false},
+// TestDenyGuidanceCoversEveryReason は deny の理由が形ごとに異なり、どれにも wx new の案内があることを確認する。
+func TestDenyGuidanceCoversEveryReason(t *testing.T) {
+	reasons := []string{
+		denyReasonCompound, denyReasonOtherRepository, denyReasonDirectory, denyReasonExpandedDirectory,
+		denyReasonBranchCreation, denyReasonStartPoint, denyReasonExpandedStartPoint, denyReasonUnsupported,
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := isHexObjectName(test.name); got != test.want {
-				t.Fatalf("isHexObjectName(%q)=%v, want %v", test.name, got, test.want)
-			}
-		})
+	seen := map[string]bool{}
+	for _, reason := range reasons {
+		if seen[reason] {
+			t.Fatalf("deny reason %q is shared by two forms", reason)
+		}
+		seen[reason] = true
+		if !strings.Contains(denyGuidance[reason], "wx new") {
+			t.Fatalf("guidance for %q=%q, want a wx new command", reason, denyGuidance[reason])
+		}
+	}
+	if len(denyGuidance) != len(reasons) {
+		t.Fatalf("denyGuidance has %d entries, want %d", len(denyGuidance), len(reasons))
 	}
 }
 
@@ -183,6 +195,33 @@ func TestWorktreeAddHookOutputKeepsUnknownToolInputFields(t *testing.T) {
 	}
 }
 
+// TestWorktreeAddHookOutputResolvesDirectoryFromPayloadCWD は git -C を payload の cwd から解決することを確認する。
+func TestWorktreeAddHookOutputResolvesDirectoryFromPayloadCWD(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := filepath.Join(root, "server")
+	if err := os.MkdirAll(filepath.Join(server, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(map[string]any{"cwd": root, "tool_input": map[string]any{"command": "git -C server worktree add --detach /abs/wt 3139d39"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, ok := worktreeAddHookOutput(payload, root)
+	if !ok || output.HookSpecificOutput.PermissionDecision != "allow" {
+		t.Fatalf("output=%+v ok=%v, want a rewrite", output.HookSpecificOutput, ok)
+	}
+	var command string
+	if err := json.Unmarshal(output.HookSpecificOutput.UpdatedInput["command"], &command); err != nil {
+		t.Fatal(err)
+	}
+	if want := "(cd '" + server + "' && wx new --commit 3139d39)"; command != want {
+		t.Fatalf("command=%q, want %q", command, want)
+	}
+}
+
 func TestWorktreeAddHookOutputIgnoresUnusablePayloads(t *testing.T) {
 	for _, payload := range []string{
 		"",
@@ -207,7 +246,7 @@ func TestWorktreeAddHookDeniesWithoutUpdatedInput(t *testing.T) {
 	if output.HookSpecificOutput.PermissionDecision != "deny" || output.HookSpecificOutput.UpdatedInput != nil {
 		t.Fatalf("deny output=%+v", output.HookSpecificOutput)
 	}
-	if !strings.Contains(output.HookSpecificOutput.PermissionDecisionReason, "wx new --branch") {
+	if output.HookSpecificOutput.PermissionDecisionReason != denyReasonBranchCreation+" "+denyGuidance[denyReasonBranchCreation] {
 		t.Fatalf("deny reason=%q", output.HookSpecificOutput.PermissionDecisionReason)
 	}
 	encoded, err := json.Marshal(output)

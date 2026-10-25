@@ -57,7 +57,7 @@ func TestRunLeaseNewReleasesTheLeaseWhenInterruptedBeforeReady(t *testing.T) {
 	client.Config.RepositoryDefaults.Readiness.Timeout = &config.Duration{Duration: time.Minute}
 	blockWaitReadyUntilInterrupt(t, handler)
 	started := time.Now()
-	if exit := client.RunLeaseNew(ctx, nil, true); exit != 1 {
+	if exit := client.RunLeaseNew(ctx, nil, nil, true); exit != 1 {
 		t.Fatalf("RunLeaseNew exit=%d, want 1 after an interrupt", exit)
 	}
 	if elapsed := time.Since(started); elapsed >= client.Config.RepositoryDefaults.Readiness.Timeout.Duration {

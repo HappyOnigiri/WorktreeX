@@ -2,7 +2,7 @@ package rpc
 
 // 貸出と復元の要求型。CLI と daemon で共有し、片側だけの改名や型違いを防ぐ。
 // Params の JSON 文字列が冪等キーなので、宣言順と既存のゼロ値は従来の payload を保つ。
-// 新しい任意フィールドの ForceCold・Language・LeaseOwnerPID だけは、旧クライアントと同じになるゼロ値を省略する。
+// 新しい任意フィールドの Commits・ForceCold・Language・LeaseOwnerPID だけは、旧クライアントと同じになるゼロ値を省略する。
 
 // LeaseKind 以下の4フィールドは agent 起動以外への貸出（wx shell / wx run / wx new）を表す。
 // LeaseKind が空なら従来の agent 起動である。LeaseOwner* は wx new を呼んだ親 session の
@@ -19,6 +19,7 @@ type ResolveAndLeaseParams struct {
 	Agent                string   `json:"agent"`
 	Branches             []string `json:"branches"`
 	ClientPID            int      `json:"client_pid"`
+	Commits              []string `json:"commits,omitempty"`
 	CWD                  string   `json:"cwd"`
 	ForceCold            bool     `json:"force_cold,omitempty"`
 	ForceWorktree        bool     `json:"force_worktree"`

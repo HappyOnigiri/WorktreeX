@@ -39,9 +39,15 @@ const (
 	policyTokenRedirect
 )
 
+// start と end は command 内の語のバイト範囲で、語の token にだけ入る。
+// operator は区切りの原文（`&&` `||` `;` 改行）と、引用されていない置換を開く括弧の `$(` である。
+// どちらも git worktree add を連結の中で書き換えるときに、置き換える範囲と前後の繋ぎ方を知るために使う。
+// commentlint:allow-long -- 位置と区切りの原文を持つ理由を残す
 type policyToken struct {
-	kind policyTokenKind
-	word commandWord
+	kind       policyTokenKind
+	word       commandWord
+	start, end int
+	operator   string
 }
 
 type pendingHeredoc struct {
@@ -65,6 +71,8 @@ type policyLexer struct {
 	heredocDelimiter, stripTabs bool
 	// depth は開いている括弧の数で、置換の本文の終端 `)` を入れ子の `)` と区別する。
 	depth int
+	// wordStart と wordEnd は作りかけの語のバイト範囲である。
+	wordStart, wordEnd int
 }
 
 // lexPolicyCommand は command を語と shell の演算子の列にする。
@@ -88,6 +96,7 @@ func lexPolicySpan(command string, start int, closer byte) (tokens []policyToken
 			closed = true
 			break
 		}
+		position, wasStarted := lexer.index, lexer.started
 		switch {
 		case lexer.quote == '\'':
 			lexer.singleQuoted(char)
@@ -95,6 +104,12 @@ func lexPolicySpan(command string, start int, closer byte) (tokens []policyToken
 			lexer.doubleQuoted(char)
 		case !lexer.operator(char):
 			lexer.unquoted(char)
+		}
+		if lexer.started {
+			if !wasStarted {
+				lexer.wordStart = position
+			}
+			lexer.wordEnd = lexer.index + 1
 		}
 	}
 	lexer.flush()
@@ -144,7 +159,7 @@ func (l *policyLexer) flush() {
 		l.heredocs = append(l.heredocs, pendingHeredoc{delimiter: l.current.value, stripTabs: l.stripTabs, expands: !l.current.quoted})
 		l.heredocDelimiter = false
 	}
-	l.tokens = append(l.tokens, policyToken{kind: policyTokenWord, word: l.current})
+	l.tokens = append(l.tokens, policyToken{kind: policyTokenWord, word: l.current, start: l.wordStart, end: l.wordEnd})
 	l.word.Reset()
 	l.current = commandWord{}
 	l.started = false
@@ -153,6 +168,12 @@ func (l *policyLexer) flush() {
 func (l *policyLexer) emit(kind policyTokenKind) {
 	l.flush()
 	l.tokens = append(l.tokens, policyToken{kind: kind})
+}
+
+// emitSeparator は区切りを、その原文とともに出す。
+func (l *policyLexer) emitSeparator(operator string) {
+	l.emit(policyTokenSeparator)
+	l.tokens[len(l.tokens)-1].operator = operator
 }
 
 func (l *policyLexer) singleQuoted(char byte) {
@@ -196,13 +217,13 @@ func (l *policyLexer) operator(char byte) bool {
 			l.index++
 		}
 	case char == '\n':
-		l.emit(policyTokenSeparator)
+		l.emitSeparator("\n")
 		var complete bool
 		l.index, complete = skipHeredocBodies(l.command, l.index+1, l.heredocs)
 		l.heredocs = nil
 		l.wellFormed = l.wellFormed && complete
 	case char == ';':
-		l.emit(policyTokenSeparator)
+		l.emitSeparator(";")
 	case char == '&' && next == '>':
 		l.index++
 		if l.next() == '>' {
@@ -211,7 +232,7 @@ func (l *policyLexer) operator(char byte) bool {
 		l.emit(policyTokenRedirect)
 	case next == char && (char == '&' || char == '|'):
 		l.index++
-		l.emit(policyTokenSeparator)
+		l.emitSeparator(string([]byte{char, char}))
 	case char == '|':
 		if next == '&' {
 			l.index++
@@ -272,6 +293,7 @@ func (l *policyLexer) unquoted(char byte) {
 		l.current.expanded = true
 		l.depth++
 		l.emit(policyTokenOpen)
+		l.tokens[len(l.tokens)-1].operator = "$("
 		l.index++
 	case char == '`':
 		l.substitution(l.index+1, '`')

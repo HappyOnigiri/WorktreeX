@@ -381,3 +381,43 @@ func ResolveRef(ctx context.Context, r *Runner, repo, branch string) (string, bo
 	}
 	return "", false, nil
 }
+
+// IsHexObjectName は name が 7〜40 桁の 16 進で、短縮形を含む SHA-1 の object 名として読めるかを返す。
+func IsHexObjectName(name string) bool {
+	if len(name) < 7 || len(name) > 40 {
+		return false
+	}
+	for _, char := range []byte(name) {
+		if !(char >= '0' && char <= '9') && !(char >= 'a' && char <= 'f') && !(char >= 'A' && char <= 'F') {
+			return false
+		}
+	}
+	return true
+}
+
+// ResolveCommit は 16 進の object 名（短縮形を含む）を commit の完全な OID へ解決する。
+// 第 2 戻り値が false なのは object が repository に無い場合で、fetch 前の commit がこれに当たる。
+// rev-parse は同じ名前の ref を object 名より優先するため、OID が name で始まらない結果は ref を引いたものとして拒否する。
+// commentlint:allow-long -- ref 優先の挙動と、それを拒否する理由を残す
+func ResolveCommit(ctx context.Context, r *Runner, repo, name string) (string, bool, error) {
+	if !IsHexObjectName(name) {
+		return "", false, fmt.Errorf("%q is not a hexadecimal object name", name)
+	}
+	res, err := r.Run(ctx, repo, "rev-parse", "--verify", "--quiet", name+"^{commit}")
+	if err == nil {
+		oid := strings.TrimSpace(res.Stdout)
+		if !strings.HasPrefix(oid, strings.ToLower(name)) {
+			return "", false, fmt.Errorf("%s names a ref, not a commit object", name)
+		}
+		return oid, true, nil
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return "", false, err
+	}
+	var ge *Error
+	if errors.As(err, &ge) && ge.Result.ExitCode == 1 && ge.Result.Stderr == "" {
+		return "", false, nil
+	}
+	// commit 以外の object や曖昧な短縮形は、不在に化けさせず Git の診断を返す。
+	return "", false, err
+}

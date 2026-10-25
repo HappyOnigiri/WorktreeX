@@ -55,7 +55,14 @@ func (e *UnresolvedDefaultBranchError) Error() string {
 }
 
 func ResolveBranches(ctx context.Context, git *gitx.Runner, w discovery.Workspace, specs []string) ([]Resolved, error) {
-	return resolveBranches(ctx, git, w, specs, false, nil)
+	return resolveBranches(ctx, git, w, specs, nil, false, nil)
+}
+
+// ResolveStartPoints は branch の指定に加えて、`[repo=]<object 名>` 形式の commit の指定を解決する。
+// commit はローカルの object だけを引き、fetch しない。git worktree add が未取得の commit を起点にできないのと同じ扱いである。
+// commentlint:allow-long -- fetch しない理由を git worktree add の挙動と対応付けて残す
+func ResolveStartPoints(ctx context.Context, git *gitx.Runner, w discovery.Workspace, branches, commits []string) ([]Resolved, error) {
+	return resolveBranches(ctx, git, w, branches, commits, false, nil)
 }
 
 // ResolveBranchesWithFetch は branch 未指定のときだけ各 repository の origin 既定
@@ -64,10 +71,10 @@ func ResolveBranches(ctx context.Context, git *gitx.Runner, w discovery.Workspac
 // OID へ戻し、context のキャンセルや通常の ref 解決障害だけを error とする。
 // commentlint:allow-long -- fetch と fallback の契約を公開関数の doc comment にまとめる
 func ResolveBranchesWithFetch(ctx context.Context, git *gitx.Runner, w discovery.Workspace, specs []string, warn func(FetchWarning)) ([]Resolved, error) {
-	return resolveBranches(ctx, git, w, specs, true, warn)
+	return resolveBranches(ctx, git, w, specs, nil, true, warn)
 }
 
-func resolveBranches(ctx context.Context, git *gitx.Runner, w discovery.Workspace, specs []string, fetchDefault bool, warn func(FetchWarning)) ([]Resolved, error) {
+func resolveBranches(ctx context.Context, git *gitx.Runner, w discovery.Workspace, specs, commitSpecs []string, fetchDefault bool, warn func(FetchWarning)) ([]Resolved, error) {
 	global := ""
 	qualified := map[string]string{}
 	for _, s := range specs {
@@ -76,14 +83,11 @@ func resolveBranches(ctx context.Context, git *gitx.Runner, w discovery.Workspac
 			if parts[0] == "" || parts[1] == "" {
 				return nil, fmt.Errorf("invalid branch specification %q", s)
 			}
-			matches := matchRepositories(w.Repositories, parts[0])
-			if len(matches) == 0 {
-				return nil, fmt.Errorf("branch selector %q matches no repository", parts[0])
+			repo, err := selectRepository(w.Repositories, "branch", parts[0])
+			if err != nil {
+				return nil, err
 			}
-			if len(matches) > 1 {
-				return nil, fmt.Errorf("branch selector %q is ambiguous", parts[0])
-			}
-			id := string(matches[0].ID)
+			id := string(repo.ID)
 			if _, ok := qualified[id]; ok {
 				return nil, fmt.Errorf("repository %q has multiple branch specifications", parts[0])
 			}
@@ -95,6 +99,12 @@ func resolveBranches(ctx context.Context, git *gitx.Runner, w discovery.Workspac
 			global = s
 		}
 	}
+	commits, err := resolveCommits(ctx, git, w, commitSpecs, qualified, global)
+	if err != nil {
+		return nil, err
+	}
+	// fetch は起点を何も指定しない解決にだけ許す。
+	fetchDefault = fetchDefault && len(specs) == 0 && len(commitSpecs) == 0
 	globalMatches := map[string]bool{}
 	// global の解決結果は下の repository ごとの解決で使い回し、同じ ref を2回引かない。
 	globalOIDs := map[string]string{}
@@ -103,6 +113,9 @@ func resolveBranches(ctx context.Context, git *gitx.Runner, w discovery.Workspac
 		applicable := make([]discovery.Repository, 0, len(w.Repositories))
 		for _, repo := range w.Repositories {
 			if _, overridden := qualified[string(repo.ID)]; overridden {
+				continue
+			}
+			if _, overridden := commits[string(repo.ID)]; overridden {
 				continue
 			}
 			applicable = append(applicable, repo)
@@ -135,6 +148,10 @@ func resolveBranches(ctx context.Context, git *gitx.Runner, w discovery.Workspac
 	}
 	out := make([]Resolved, 0, len(w.Repositories))
 	for _, repo := range w.Repositories {
+		if oid, ok := commits[string(repo.ID)]; ok {
+			out = append(out, Resolved{Repository: repo, RequestedRef: oid, OID: oid})
+			continue
+		}
 		branch := repo.DefaultBranch
 		if global != "" {
 			if globalMatches[string(repo.ID)] {
@@ -154,7 +171,7 @@ func resolveBranches(ctx context.Context, git *gitx.Runner, w discovery.Workspac
 		)
 		if cached, found := globalOIDs[string(repo.ID)]; found && branch == global {
 			oid, ok = cached, true
-		} else if fetchDefault && len(specs) == 0 {
+		} else if fetchDefault {
 			oid, ok, err = resolveFetchedDefaultBranch(ctx, git, repo, branch, warn)
 		} else {
 			oid, ok, err = gitx.ResolveRef(ctx, git, string(repo.MainPath), branch)
@@ -163,7 +180,7 @@ func resolveBranches(ctx context.Context, git *gitx.Runner, w discovery.Workspac
 			return nil, err
 		}
 		if !ok {
-			if fetchDefault && len(specs) == 0 {
+			if fetchDefault {
 				// fetch 経路で local ref も失われている場合、古い remote-tracking
 				// ref を採用すると fetch 失敗の一部更新を隠してしまう。
 				return nil, &MissingDefaultBranchError{Branch: branch, RepositoryRelativePath: repo.RelativePath}
@@ -285,6 +302,88 @@ func issueFetchWarning(warn func(FetchWarning), warning FetchWarning) {
 	if warn != nil {
 		warn(warning)
 	}
+}
+
+// resolveCommits は commit の指定を repository ID ごとの完全な OID へ解決する。
+// repository を指定しない commit はそれを持つ repository にだけ当て、残りは branch の指定か既定 branch に任せる。
+// 同じ repository に branch と commit を両方指定した場合と、global の branch と commit を併用した場合は、起点を決められないため拒否する。
+// commentlint:allow-long -- global 指定の当て方と、併用を拒否する条件を残す
+func resolveCommits(ctx context.Context, git *gitx.Runner, w discovery.Workspace, specs []string, qualifiedBranches map[string]string, globalBranch string) (map[string]string, error) {
+	out := map[string]string{}
+	global := ""
+	qualified := map[string]string{}
+	for _, spec := range specs {
+		selector, name, hasSelector := strings.Cut(spec, "=")
+		if !hasSelector {
+			name = spec
+		}
+		if !gitx.IsHexObjectName(name) {
+			return nil, fmt.Errorf("invalid commit specification %q; use a hexadecimal object name", spec)
+		}
+		if !hasSelector {
+			if global != "" {
+				return nil, fmt.Errorf("multiple global commit specifications are ambiguous")
+			}
+			global = name
+			continue
+		}
+		repo, err := selectRepository(w.Repositories, "commit", selector)
+		if err != nil {
+			return nil, err
+		}
+		id := string(repo.ID)
+		if _, ok := qualifiedBranches[id]; ok {
+			return nil, fmt.Errorf("repository %q has both a branch and a commit specification", selector)
+		}
+		if _, ok := qualified[id]; ok {
+			return nil, fmt.Errorf("repository %q has multiple commit specifications", selector)
+		}
+		qualified[id] = name
+	}
+	if global != "" && globalBranch != "" {
+		return nil, fmt.Errorf("a global branch and a global commit specification are ambiguous")
+	}
+	var searched []string
+	globalFound := false
+	for _, repo := range w.Repositories {
+		id := string(repo.ID)
+		name, isQualified := qualified[id]
+		if !isQualified {
+			if _, overridden := qualifiedBranches[id]; overridden || global == "" {
+				continue
+			}
+			name = global
+		}
+		oid, ok, err := gitx.ResolveCommit(ctx, git, string(repo.MainPath), name)
+		if err != nil {
+			return nil, fmt.Errorf("resolve commit %s in repository %s: %w", name, repo.RelativePath, err)
+		}
+		if ok {
+			out[id] = oid
+			globalFound = globalFound || !isQualified
+			continue
+		}
+		if isQualified {
+			return nil, fmt.Errorf("commit %s does not exist in repository %s; fetch it first, for example with git fetch origin %s", name, repo.RelativePath, name)
+		}
+		searched = append(searched, repo.RelativePath)
+	}
+	if global != "" && !globalFound {
+		return nil, fmt.Errorf("commit %s does not exist in any repository (%s); fetch it first, for example with git fetch origin %s", global, strings.Join(searched, ", "), global)
+	}
+	return out, nil
+}
+
+// selectRepository は `repo=` セレクタをちょうど 1 つの repository へ解決する。kind は診断に出す指定の種類である。
+func selectRepository(repos []discovery.Repository, kind, selector string) (discovery.Repository, error) {
+	matches := matchRepositories(repos, selector)
+	if len(matches) == 0 {
+		return discovery.Repository{}, fmt.Errorf("%s selector %q matches no repository", kind, selector)
+	}
+	if len(matches) > 1 {
+		return discovery.Repository{}, fmt.Errorf("%s selector %q is ambiguous", kind, selector)
+	}
+	return matches[0], nil
 }
 
 func matchRepositories(repos []discovery.Repository, selector string) []discovery.Repository {
