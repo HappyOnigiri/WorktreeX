@@ -91,6 +91,9 @@
    `pre-tool-use` hookは準備中のツール呼び出しを止めるほか、agentが単独で実行しようとした`git worktree add`をツール入力の書き換えで`wx new`へ写す。
    素のworktreeはslotの準備も保存も返却も受けられないためで、安全に写せない形は写し方を案内して拒否する。
    判定はコマンド文字列の静的な解析だけで行い、候補を同定できない入力は通す。
+   `git -C`だけは、値がworkspace内のrepositoryを指すかをファイルシステムで確かめ、そのディレクトリで`wx new`を実行する形へ写す。
+   multi-repository workspaceの`repo=`セレクタへ写さないのは、slot内のディレクトリ名がsource側のrepository名と一致する保証がないためである。
+   また`git -C`が作るのはそのrepository単独のworktreeで、repository内で実行した`wx new`も単独のrepositoryを貸し出すので意味が揃う。
 
    管理下のsessionでは、同じhookが`Agent(isolation="worktree")`と、linked worktreeへブランチをattachする`checkout`・`switch`・`symbolic-ref`も拒否する。
    前者はwx管理外のworktreeを残してlink ruleも適用しないため、後者はslotをdetachedのまま保つためである。
