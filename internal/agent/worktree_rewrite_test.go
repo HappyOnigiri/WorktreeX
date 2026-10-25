@@ -46,8 +46,10 @@ func TestClassifyWorktreeAddCommand(t *testing.T) {
 		{name: "command substitution path", command: `git worktree add --detach "$(mktemp -d)/wt" 801e2e09`, decision: worktreeAddRewrite, rewrite: "wx new --commit 801e2e09"},
 		{name: "expanded start point", command: `git worktree add --detach /tmp/wt "$REV"`, decision: worktreeAddDeny, reason: denyReasonExpandedStartPoint},
 		{name: "expanded flag", command: "git worktree add --$MODE /tmp/wt", decision: worktreeAddDeny, reason: denyReasonUnsupported},
-		// 展開を含む連結は、展開ではなく連結を理由に拒否する。
-		{name: "variable path in compound", command: `WT=/tmp/wt; git worktree add --detach "$WT" 3139d393c8470d47e7cf30810580acad50a907e7 && cd "$WT"`, decision: worktreeAddDeny, reason: denyReasonCompound},
+		// パスを変数で後続へ渡す連結は、その変数へ貸出のパスを入れる形に書き換える。
+		{name: "variable path in compound", command: `WT=/tmp/wt; git worktree add --detach "$WT" 3139d393c8470d47e7cf30810580acad50a907e7 && cd "$WT"`, decision: worktreeAddRewrite, rewrite: `WT=/tmp/wt; WT=$(wx new --commit 3139d393c8470d47e7cf30810580acad50a907e7) && echo "WT=$WT" && cd "$WT"`},
+		// 書き換えられない連結は、展開を含んでいても展開ではなく連結を理由に拒否する。
+		{name: "variable path followed by semicolon", command: `WT=/tmp/wt; git worktree add --detach "$WT" 3139d393c8470d47e7cf30810580acad50a907e7; cd "$WT"`, decision: worktreeAddDeny, reason: denyReasonCompound},
 		{name: "branch creation from remote", command: "git worktree add -b feature/x /abs/wt origin/feature/x", decision: worktreeAddDeny, reason: denyReasonBranchCreation},
 		{name: "unterminated quote", command: `git worktree add 'x`, decision: worktreeAddDeny, reason: denyReasonUnsupported},
 		{name: "missing path", command: "git worktree add", decision: worktreeAddDeny, reason: denyReasonUnsupported},

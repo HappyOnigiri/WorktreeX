@@ -94,6 +94,9 @@
    `git -C`だけは、値がworkspace内のrepositoryを指すかをファイルシステムで確かめ、そのディレクトリで`wx new`を実行する形へ写す。
    multi-repository workspaceの`repo=`セレクタへ写さないのは、slot内のディレクトリ名がsource側のrepository名と一致する保証がないためである。
    また`git -C`が作るのはそのrepository単独のworktreeで、repository内で実行した`wx new`も単独のrepositoryを貸し出すので意味が揃う。
+   連結の中では、パス引数が変数1つで直後が`&&`か末尾の形だけを`NAME=$(wx new ...)`へ置き換え、残りの文字列はそのまま残す。
+   貸出に失敗すれば`&&`で後続が止まるためで、`;`などで続く形は失敗時に空の変数のまま後続が今のworkspaceで走るので拒否する。
+   前にある`cd`は追い、workspace内に静的に解決できる場合だけ受け付ける。
 
    管理下のsessionでは、同じhookが`Agent(isolation="worktree")`と、linked worktreeへブランチをattachする`checkout`・`switch`・`symbolic-ref`も拒否する。
    前者はwx管理外のworktreeを残してlink ruleも適用しないため、後者はslotをdetachedのまま保つためである。
@@ -102,6 +105,7 @@
    `off` / `ask`ではwx newを使う前提が無いので素通しする。
    attachの判定はcdとサブシェルを追って各git呼び出しの実行先を決め、対象のgit呼び出しを含むのに実行先や引数を静的に決められない場合は見逃しを避けて拒否する。
    判定は1回のhookで1つだけ出し、`git worktree add`の書き換えを優先する。
+   ただし書き換えはallowで返り、連結の残りもそのまま走るので、管理下のsessionでは書き換え後のcommandをattachの判定に通し、拒否ならそちらを出す。
    拒否はdaemonを必要としないので準備完了を待たずに出し、書き換えだけを準備完了の後に出す。daemonに届かずhookが失敗で終わると、agentは操作を通してしまうためである。
 
    この書き換えは`wx -n`（`--no-worktree`）の直接起動でも効く。

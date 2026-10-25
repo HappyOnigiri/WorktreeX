@@ -41,6 +41,14 @@ const (
 	rewriteReason        = "wx leases prepared worktrees, so git worktree add is replaced with wx new."
 )
 
+// compoundRewriteContext は連結の一部を書き換えたときの案内で、パスは変数で後続へ渡り、command 自身が表示する。
+const compoundRewriteContext = `wx replaced git worktree add inside the command with NAME=$(wx new ...), which leases a workspace that wx prepares, tracks and returns.
+- The variable that named the worktree path now holds the leased path for the rest of the command, and the command prints it as NAME=<path>. The path assigned before was never created.
+- Use the printed path in later tool calls.
+- The leased workspace is detached. Run "git branch <name> HEAD" inside it when the work needs a branch.
+- No need to run wx release: the lease is returned when this session ends.
+- wx new can take a while when no prepared slot is standing by.`
+
 // rewriteContext は書き換えを受けた agent が次に何をすべきかを伝える。
 const rewriteContext = `wx replaced the command with wx new, which leases a workspace that wx prepares, tracks and returns.
 - Use the path printed by wx new. wx chooses the path, so the path in the original command was never created.
@@ -83,10 +91,16 @@ const (
 	worktreeAddDeny
 )
 
+// worktreeAddVerdict の path と directory は書き換えのときだけ入る。
+// path は捨てるパス引数の語、directory は git -C から解決した wx new の実行先で、連結の書き換えが使う。
 type worktreeAddVerdict struct {
-	decision worktreeAddDecision
-	command  string
-	reason   string
+	decision  worktreeAddDecision
+	command   string
+	reason    string
+	path      shellWord
+	directory string
+	// compound は連結の一部だけを書き換えたことを表し、agent への案内を変える。
+	compound bool
 }
 
 func ignoreWorktreeAdd() worktreeAddVerdict {
@@ -132,12 +146,16 @@ func worktreeAddHookOutput(payload []byte, workspaceRoot string) (preToolUseHook
 			return preToolUseHookOutput{}, false
 		}
 		updated["command"] = encoded
+		guidance := rewriteContext
+		if verdict.compound {
+			guidance = compoundRewriteContext
+		}
 		return preToolUseHookOutput{
 			HookSpecificOutput: preToolUseHookSpecificOutput{
 				HookEventName:            "PreToolUse",
 				PermissionDecision:       "allow",
 				PermissionDecisionReason: rewriteReason,
-				AdditionalContext:        rewriteContext,
+				AdditionalContext:        guidance,
 				UpdatedInput:             updated,
 			},
 			SystemMessage: rewriteSystemMessage,
@@ -177,17 +195,42 @@ func writePreToolUseOutput(output preToolUseHookOutput) {
 // preToolUseDecision は git worktree add の書き換えを優先し、判定を 1 つだけ選ぶ。
 // ここでの SubAgent の isolation とブランチ attach の deny は管理下 session（WX_SESSION_ID あり）に限る。
 // wx 外の session の isolation は writeUnmanagedPreToolUseDecision が保存済み方針を引いて判定する。
+// 書き換えは allow で返り連結の残りも判定を通らないため、管理下では書き換え後の command をブランチ attach の判定に通す。
+// commentlint:allow-long -- 書き換え後にも attach の判定を通す理由を残す
 func preToolUseDecision(ctx context.Context, payload []byte, workspaceRoot string, managed bool) (preToolUseHookOutput, bool) {
 	if len(payload) == 0 {
 		return preToolUseHookOutput{}, false
 	}
 	if output, ok := worktreeAddHookOutput(payload, workspaceRoot); ok || !managed {
+		if ok && managed && output.HookSpecificOutput.UpdatedInput != nil {
+			if denied, deny := branchAttachHookOutput(ctx, rewrittenPayload(payload, output.HookSpecificOutput.UpdatedInput)); deny {
+				return denied, true
+			}
+		}
 		return output, ok
 	}
 	if output, ok := subagentIsolationHookOutput(payload); ok {
 		return output, true
 	}
 	return branchAttachHookOutput(ctx, payload)
+}
+
+// rewrittenPayload は payload の tool_input を書き換え後の入力へ差し替える。組み立てに失敗すれば元の payload を返す。
+func rewrittenPayload(payload []byte, updated map[string]json.RawMessage) []byte {
+	var decoded map[string]json.RawMessage
+	if json.Unmarshal(payload, &decoded) != nil {
+		return payload
+	}
+	toolInput, err := json.Marshal(updated)
+	if err != nil {
+		return payload
+	}
+	decoded["tool_input"] = toolInput
+	rebuilt, err := json.Marshal(decoded)
+	if err != nil {
+		return payload
+	}
+	return rebuilt
 }
 
 // commandRunsInWorkspace は cwd がこの session へ貸し出した workspace の配下かを判定する。
@@ -231,22 +274,34 @@ func classifyWorktreeAddCommand(command string, location worktreeAddLocation) wo
 	case !wellFormed:
 		return denyWorktreeAdd(denyReasonUnsupported)
 	case candidates > 1 || len(segments) > 1:
+		if command, ok := rewriteCompoundWorktreeAdd(command, location); ok {
+			return worktreeAddVerdict{decision: worktreeAddRewrite, command: command, compound: true}
+		}
 		return denyWorktreeAdd(denyReasonCompound)
-	case chosen.issue != "":
-		return denyWorktreeAdd(chosen.issue)
 	}
-	verdict := rewriteWorktreeAddArguments(chosen.arguments)
+	verdict := rewriteWorktreeAddCandidate(chosen, location)
+	if verdict.decision == worktreeAddRewrite && verdict.directory != "" {
+		// サブシェルにするのは、cd を次のツール呼び出しの cwd へ持ち越させないためである。
+		verdict.command = "(cd " + shellSingleQuote(verdict.directory) + " && " + verdict.command + ")"
+	}
+	return verdict
+}
+
+// rewriteWorktreeAddCandidate は git worktree add 1 つを、location を cwd とする wx new の呼び出しへ写す。
+// git -C があれば directory に実行先を入れ、command は cd を含まない wx new だけにする。
+func rewriteWorktreeAddCandidate(candidate worktreeAddCandidate, location worktreeAddLocation) worktreeAddVerdict {
+	if candidate.issue != "" {
+		return denyWorktreeAdd(candidate.issue)
+	}
+	verdict := rewriteWorktreeAddArguments(candidate.arguments)
 	if verdict.decision != worktreeAddRewrite {
 		return verdict
 	}
-	directory, issue := location.repositoryDirectory(chosen.directories)
+	directory, issue := location.repositoryDirectory(candidate.directories)
 	if issue != "" {
 		return denyWorktreeAdd(issue)
 	}
-	if directory != "" {
-		// サブシェルにするのは、cd を次のツール呼び出しの cwd へ持ち越させないためである。
-		verdict.command = "(cd " + shellSingleQuote(directory) + " && " + verdict.command + ")"
-	}
+	verdict.directory = directory
 	return verdict
 }
 
@@ -308,7 +363,7 @@ func rewriteWorktreeAddArguments(arguments []shellWord) worktreeAddVerdict {
 	if !ok {
 		return denyWorktreeAdd(denyReasonStartPoint)
 	}
-	return worktreeAddVerdict{decision: worktreeAddRewrite, command: command}
+	return worktreeAddVerdict{decision: worktreeAddRewrite, command: command, path: positional[0]}
 }
 
 // wxNewCommand は git worktree add の起点を wx new の呼び出しへ写す。
