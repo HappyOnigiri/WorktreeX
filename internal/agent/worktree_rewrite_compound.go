@@ -21,8 +21,11 @@ var shellReservedWords = map[string]bool{
 }
 
 // compoundUnsafeCommands は実行先や実行内容を静的に追えなくするコマンドで、連結のどこにあっても書き換えない。
+// `env sh -c` や `sudo -u x bash` のような包む語を読み飛ばすと引数の形を取りこぼすので、先頭に限らずどの語にあっても拒否する。
+// `.` だけは `ls .` のような引数と区別できないため、先頭の語に限る。
+// commentlint:allow-long -- どの語でも拒否する理由と、`.` の例外を残す
 var compoundUnsafeCommands = map[string]bool{
-	"eval": true, "source": true, ".": true, "exec": true, "pushd": true, "popd": true,
+	"eval": true, "source": true, "exec": true, "pushd": true, "popd": true,
 	"sh": true, "bash": true, "zsh": true, "dash": true, "ksh": true, "xargs": true,
 }
 
@@ -81,19 +84,26 @@ func rewriteCompoundWorktreeAdd(command string, location worktreeAddLocation) (s
 
 // scanCompoundTokens は置換の本文まで含めて git worktree add の数を数え、実行内容を静的に追えなくするコマンドの有無を返す。
 // allow で返す command に、書き換えなかった git worktree add が残らないようにするためである。
-// commentlint:allow-long -- 本文まで数える理由を残す
+// `env git worktree add` や `nohup git worktree add` も逃さないよう、語の並びに `worktree add` があれば候補に数える。
+// commentlint:allow-long -- 本文まで数える理由と、候補を広く数える理由を残す
 func scanCompoundTokens(tokens []policyToken) (candidates int, unsafe bool) {
 	var words []shellWord
 	flush := func() {
-		if _, ok := gitWorktreeAddArguments(words); ok {
-			candidates++
+		for index := range words {
+			if index+1 < len(words) && words[index].value == "worktree" && words[index+1].value == "add" {
+				candidates++
+				break
+			}
 		}
-		index := 0
-		for index < len(words) && isAssignmentWord(words[index].value) {
-			index++
+		first := 0
+		for first < len(words) && isAssignmentWord(words[first].value) {
+			first++
 		}
-		if index < len(words) && compoundUnsafeCommands[filepath.Base(words[index].value)] {
-			unsafe = true
+		for index := first; index < len(words); index++ {
+			name := filepath.Base(words[index].value)
+			if compoundUnsafeCommands[name] || (index == first && name == ".") {
+				unsafe = true
+			}
 		}
 		words = nil
 	}
