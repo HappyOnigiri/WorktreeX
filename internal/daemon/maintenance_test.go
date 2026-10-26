@@ -577,3 +577,29 @@ func TestForgetRemovesRegistrationWhoseRootIsGone(t *testing.T) {
 		t.Fatal("unregistered path was forgotten")
 	}
 }
+
+func TestForgetAcceptsConfiguredMissingWorkspaceWithoutDatabaseRegistration(t *testing.T) {
+	t.Parallel()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := openTestStoreAtPath(t, filepath.Join(root, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	cfg := config.Defaults()
+	cfg.Storage.WorktreeRoot = filepath.Join(root, "worktrees")
+	gone := filepath.Join(root, "gone")
+	cfg.Workspaces[gone] = config.Workspace{Worktree: "hot"}
+	manager := testManager(t, cfg, store)
+	t.Cleanup(manager.Close)
+	result, err := manager.Forget(context.Background(), gone, false)
+	if err != nil || result.Root != gone {
+		t.Fatalf("Forget result=%+v err=%v", result, err)
+	}
+	if _, err := manager.Forget(context.Background(), filepath.Join(root, "unknown"), false); err == nil {
+		t.Fatal("unknown workspace was accepted")
+	}
+}

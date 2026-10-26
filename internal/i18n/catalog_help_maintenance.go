@@ -342,6 +342,8 @@ Options:
 		EN: `Usage: wx forget <workspace-path> [--discard-recovery]
 
 Stop managing a workspace, reclaiming the worktrees wx still owns for it.
+After unregistering it, remove its workspace-specific configuration as well.
+A registered or configured path can be forgotten even if the directory is gone.
 
 Standby worktrees are reclaimed on the way out: they hold no work of yours.
 A workspace that is still in use is refused, whatever the flags: end its
@@ -359,7 +361,8 @@ Options:
                       refusing to forget it`,
 		JA: `使い方: wx forget <workspace-path> [--discard-recovery]
 
-workspace の管理を解除し、wx が保持している worktree を回収します。
+workspace の管理を解除し、wx が保持している worktree を回収して個別設定も削除します。
+登録または設定が残っていれば、directory が消えた workspace も解除できます。
 
 standby worktree は利用者の作業を持たないため、解除の過程で回収します。使用中の workspace は flag にかかわらず拒否するので、session を終了するか wx release <id> を実行してから wx forget をもう一度実行してください。
 

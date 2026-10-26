@@ -66,7 +66,7 @@ var tabMenus = map[int][]menuItem{
 		{labelID: "menu.retry_standby.label", descriptionID: "menu.retry_standby.description", impactID: "menu.retry_standby.impact", command: "retry-standby", targetWorkspace: true, targetAll: true},
 		{labelID: "menu.release.label", descriptionID: "menu.release.description", impactID: "menu.release.impact", command: "release", inputLabelID: "menu.session_id.input", inputNeeded: true, targetInput: true, argumentChoices: releaseChoices},
 		{labelID: "menu.discard_recovery.label", descriptionID: "menu.discard_recovery.desc", impactID: "menu.discard_recovery.impact", command: "discard-recovery", targetWorkspace: true, argumentChoices: dryRunChoices("menu.discard_recovery.label"), destructive: true},
-		{labelID: "menu.forget.label", descriptionID: "menu.forget.description", impactID: "menu.forget.impact", command: "forget", targetWorkspace: true, destructive: true},
+		{labelID: "menu.forget.label", descriptionID: "menu.forget.description", impactID: "menu.forget.impact", command: "forget", targetWorkspace: true, argumentChoices: forgetChoices, destructive: true},
 		{labelID: "menu.bench.label", descriptionID: "menu.bench.description", impactID: "menu.bench.impact", command: "bench", inputLabelID: "menu.bench.input", workDir: true, argumentChoices: benchmarkChoices},
 	},
 	5: {
@@ -119,6 +119,13 @@ func releaseChoices(l *i18n.Localizer) []choice {
 	return []choice{
 		{label: l.Localize("dashboard.release_save", nil)},
 		{label: l.Localize("dashboard.release_discard", nil), value: "--discard"},
+	}
+}
+
+func forgetChoices(l *i18n.Localizer) []choice {
+	return []choice{
+		{label: l.Localize("dashboard.forget_preserve", nil)},
+		{label: l.Localize("dashboard.forget_discard", nil), value: "--discard-recovery"},
 	}
 }
 

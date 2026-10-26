@@ -159,6 +159,13 @@ var catalog = map[string]Entry{
 	"dashboard.prune_safe":            {EN: "Delete only the refs that hold nothing of their own", JA: "固有の内容を持たない ref だけ削除する"},
 	"dashboard.prune_preview_all":     {EN: "List every leftover ref, work included", JA: "作業が残る ref も含めて一覧する"},
 	"dashboard.prune_all":             {EN: "Delete every leftover ref; the work in them is lost", JA: "残っている ref をすべて削除する（作業は失われる）"},
+
+	"dashboard.forget_preserve":        {EN: "Stop managing only if no recovery state remains", JA: "復旧データが残っていない場合だけ管理を解除する"},
+	"dashboard.path_missing":           {EN: "Path does not exist", JA: "パスが存在しません"},
+	"dashboard.forget_discard":         {EN: "Discard recovery state and stop managing", JA: "復旧データを破棄して管理を解除する"},
+	"dashboard.forget_missing":         {EN: "Warning: the workspace path does not exist. Its wx registration and saved work may still remain.", JA: "警告: workspace のパスが存在しません。wx の登録や保存済みの作業は残っている場合があります。"},
+	"dashboard.forget_discard_warning": {EN: "Saved sessions, snapshots and retained worktrees, including unsaved work, will be discarded.", JA: "保存済みの session・snapshot・保持中の worktree を、未保存の作業ごと破棄します。"},
+
 	"dashboard.release_save":          {EN: "Save the work, then return the worktree", JA: "作業を保存してから worktree を返す"},
 	"dashboard.release_discard":       {EN: "Return the worktree and throw the work away", JA: "作業を破棄して worktree を返す"},
 	"dashboard.bench_cold":            {EN: "Measure one preparation from scratch (cold start)", JA: "一から準備する場合を 1 回計測（cold start）"},

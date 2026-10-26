@@ -436,6 +436,11 @@ func (m model) choiceView() []string {
 			marker = accent + "❯ " + reset
 			label = accent + label + reset
 		}
+		if option.warning != "" {
+			available := max(1, m.width-xansi.StringWidth(marker)-xansi.StringWidth(option.warning)-1)
+			label = truncate(label, available)
+			label += " " + warn + option.warning + reset
+		}
 		lines = append(lines, marker+label)
 	}
 	hint := m.t("dashboard.footer.select") + "  " + m.t("dashboard.footer.enter_confirm") + "  " + m.t("dashboard.footer.left_esc_back")
@@ -467,6 +472,12 @@ func (m model) confirmView() []string {
 	}
 	if m.input != "" {
 		lines = append(lines, m.tf("dashboard.input", map[string]any{"Value": m.input}))
+	}
+	if m.pending.command == "forget" && m.targetGone {
+		lines = append(lines, "", warn+m.t("dashboard.forget_missing")+reset)
+	}
+	if m.pending.command == "forget" && strings.TrimSpace(m.input) == "--discard-recovery" {
+		lines = append(lines, "", warn+m.t("dashboard.forget_discard_warning")+reset)
 	}
 	if m.pending.destructive {
 		lines = append(lines, "", warn+m.t("dashboard.destructive_confirm")+reset)

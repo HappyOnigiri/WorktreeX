@@ -1,6 +1,8 @@
 package dashboard
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -187,13 +189,18 @@ func (m *model) showWorkspaceChoices() {
 }
 
 func (m *model) showTargetChoices() {
+	m.targetGone = false
 	m.choices, m.choice, m.inputStage = nil, 0, "target-choice"
 	if m.pending.targetAll {
 		m.choices = append(m.choices, choice{label: m.t("dashboard.all_workspaces"), value: "--all"})
 	}
 	for _, environment := range m.configEnvironments() {
 		if environment.scope == "workspace" {
-			m.choices = append(m.choices, choice{label: labelWithDetail(environment.label, "— "+environment.target), value: environment.target})
+			option := choice{label: labelWithDetail(environment.label, "— "+environment.target), value: environment.target}
+			if m.pending.command == "forget" && m.workspacePathMissing(environment.target) {
+				option.warning = m.t("dashboard.path_missing")
+			}
+			m.choices = append(m.choices, option)
 		}
 	}
 	m.choices = append(m.choices, choice{label: m.t("dashboard.another_path"), input: true})
@@ -217,11 +224,27 @@ func (m *model) afterWorkdirChoice() {
 }
 
 func (m *model) afterTargetChoice() {
+	m.targetGone = false
+	if m.pending.command == "forget" {
+		m.targetGone = m.workspacePathMissing(m.target)
+	}
 	if m.pending.argumentChoices != nil {
 		m.showArgumentChoices()
 	} else {
 		m.mode = modeConfirm
 	}
+}
+
+func (m model) workspacePathMissing(path string) bool {
+	if !filepath.IsAbs(path) && !strings.HasPrefix(path, "~") && !strings.HasPrefix(path, "$HOME") {
+		path = filepath.Join(m.opts.CWD, path)
+	}
+	expanded, err := config.ExpandHome(path)
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(expanded)
+	return errors.Is(err, os.ErrNotExist)
 }
 
 func hasScope(scopes []string, scope string) bool {
