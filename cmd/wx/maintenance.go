@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/HappyOnigiri/WorktreeX/internal/config"
 	"github.com/HappyOnigiri/WorktreeX/internal/daemon"
 	"github.com/HappyOnigiri/WorktreeX/internal/i18n"
 	"github.com/HappyOnigiri/WorktreeX/internal/rpc"
@@ -150,7 +151,6 @@ func runForget(ctx context.Context, args []string) int {
 	ctx = commandContext(ctx)
 	fs := pflag.NewFlagSet("forget", pflag.ContinueOnError)
 	discard := fs.Bool("discard-recovery", false, "discard the recovery state of this workspace instead of refusing")
-	fs.SetInterspersed(false)
 	fs.Usage = func() { commandUsageLanguage(os.Stdout, "forget", i18n.LanguageFromContext(ctx)) }
 	if code, done := finishFlagParse(fs, "forget", args); done {
 		return code
@@ -159,14 +159,32 @@ func runForget(ctx context.Context, args []string) int {
 		commandUsageLanguage(os.Stderr, "forget", i18n.LanguageFromContext(ctx))
 		return 2
 	}
-	c, _ := rpcClient()
+	preview, configured, err := config.PreviewWorkspaceRemoval(fs.Arg(0))
+	if err != nil {
+		reportRPCErrorContext(ctx, err)
+		return 1
+	}
+	c, err := rpcClient()
+	if err != nil {
+		reportRPCErrorContext(ctx, err)
+		return 1
+	}
 	var out daemon.ForgetResult
 	callCtx, cancel := context.WithTimeout(ctx, forgetTimeout)
-	err := c.Call(callCtx, "Forget", map[string]any{"path": fs.Arg(0), "discard_recovery": *discard}, &out)
+	err = c.Call(callCtx, "Forget", map[string]any{"path": preview.Request.Target, "discard_recovery": *discard}, &out)
 	cancel()
 	if err != nil {
 		reportRPCErrorContext(ctx, err)
 		return 1
+	}
+	if configured {
+		if err := config.CommitEdit(preview); err != nil {
+			reportRPCErrorContext(ctx, err)
+			return 1
+		}
+		if err := c.Call(ctx, "ReloadConfig", struct{}{}, nil); err != nil {
+			fmt.Printf("%s: %s\n", i18n.T(ctx, "common.saved_pending", nil), rpcErrorMessageLanguage(err, i18n.LanguageFromContext(ctx)))
+		}
 	}
 	r := newTextRenderer(os.Stdout, i18n.LanguageFromContext(ctx))
 	r.line("forget.done", map[string]any{"Path": fs.Arg(0)})

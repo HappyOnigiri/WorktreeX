@@ -316,6 +316,11 @@ func (m *Manager) Forget(ctx context.Context, path string, discardRecovery bool)
 	result := ForgetResult{Root: string(canonical)}
 	w, lookupErr := m.store.WorkspaceByRoot(ctx, string(canonical))
 	if lookupErr != nil {
+		if errors.Is(lookupErr, sql.ErrNoRows) {
+			if _, configured := m.Config().Workspaces[string(canonical)]; configured {
+				return result, nil
+			}
+		}
 		// 登録を読めない場合は実体に触れず、同じ理由で失敗する ForgetWorkspace の検査へ委ねる。
 		return result, m.store.ForgetWorkspace(ctx, string(canonical))
 	}
@@ -479,8 +484,7 @@ func (m *Manager) removeForgottenWorkspaceSnapshot(ctx context.Context, sessionI
 }
 
 // forgetRoot は forget 対象にする登録済み root path を決める。
-// root ごと消えた登録はcanonical化できず、登録を消す経路はforgetしかないため、その場合だけ
-// 絶対pathが`workspaces.root_path`と完全一致する登録を受け付ける。実体には触れない登録の削除に限る。
+// root ごと消えた登録はcanonical化できないため、絶対pathが DB または設定の登録と一致する場合も受け付ける。
 func (m *Manager) forgetRoot(ctx context.Context, path string) (domain.CanonicalPath, error) {
 	canonical, err := domain.Canonicalize(path)
 	if err == nil {
@@ -490,9 +494,14 @@ func (m *Manager) forgetRoot(ctx context.Context, path string) (domain.Canonical
 	if absErr != nil {
 		return "", err
 	}
-	// 照合は登録時にcanonical化して保存した文字列との完全一致にし、打ち間違えたpathを黙って受け入れない。
+	// 登録済みの文字列との完全一致にし、打ち間違えたpathを黙って受け入れない。
 	if _, lookupErr := m.store.WorkspaceByRoot(ctx, absolute); lookupErr != nil {
-		return "", err
+		if !errors.Is(lookupErr, sql.ErrNoRows) {
+			return "", lookupErr
+		}
+		if _, configured := m.Config().Workspaces[absolute]; !configured {
+			return "", err
+		}
 	}
 	return domain.CanonicalPath(absolute), nil
 }

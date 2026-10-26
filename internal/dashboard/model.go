@@ -77,10 +77,11 @@ const (
 )
 
 type choice struct {
-	label string
-	value string
-	op    config.EditOperation
-	input bool
+	label   string
+	warning string
+	value   string
+	op      config.EditOperation
+	input   bool
 }
 
 type environment struct {
@@ -111,6 +112,7 @@ type model struct {
 	pendingLabel string
 	configMeta   config.Metadata
 	target       string
+	targetGone   bool
 	editOp       config.EditOperation
 	choices      []choice
 	choice       int

@@ -145,6 +145,10 @@ GCの候補選択と削除の入口は[`internal/daemon/gc.go`](../internal/daem
 
 ### forgetが自分で消すもの
 
+`wx forget`はdaemonでの登録解除に成功してから、CLIがworkspaceの個別設定を削除する。
+設定だけ残ったworkspaceも解除対象に含め、実体の存在は必須にしない。
+設定の保存には変更検出付きのpreviewを使い、解除中に外部で設定が変わった場合は上書きせず再実行を求める。
+
 `wx forget`は、貸出中のもの（`LEASED`などのslot・終了していないsession・実行待ちのjob）が残る間は断り、案内はsessionの停止か`wx release`にする。
 それ以外の未貸出slot（`READY`・`STALE`・`FAILED`）は利用者の作業を含まないため、断らずにその場で回収する。
 回収のたびに`FinishRemoval`が補充を予約するので、先に`SuspendReplenish`で止めてから消す。
