@@ -17,11 +17,13 @@ Goのリポジトリにバージョンを書いたmanifestを置かないため�
 リリースの準備・公開は[HappyOnigiri/ReleaseActions](https://github.com/HappyOnigiri/ReleaseActions)の共通Actionへ委ね、Worktree X側のworkflowは入力の受け口と成果物のビルドだけを持つ。
 例外は前回リリース以降のmerge済みPR数をmain宛PRへ知らせる`release-reminder.yml`である。
 
-`release.yml`を手動実行すると、リリースブランチとchangelogを本文に持つリリースPRができる。
+`release.yml`は定期実行または手動実行で、リリースブランチとchangelogを本文に持つリリースPRを作る。
+定期実行と`automatic`を有効にした手動実行では、対象PRがない場合や既存のリリースPRがある場合はスキップし、作成したPRはCI成功後に同じコミットを指定して自動マージする。
 そのPRをmainへmergeすると、`publish-release.yml`がmergeコミットをcheckoutしてビルドし、同じコミットにタグを作って全成果物を添付したReleaseを公開する。
 ビルドに使うタグはリリースブランチ名から取り出すため、成果物のバージョンはPRのブランチ名で決まる。
 
-- 最初のリリースにはタグもGitHub Releaseも無く`bump`が起点を持てないため、`version`へsemverを直接指定する。
+- 最初のリリースでは`bump: auto`がmainの全マージ済みPRからバージョンを判定する。
+  バージョンを指定したい場合は`version`へsemverを直接指定する。
 - `bump: auto`は前回リリース以降のマージ済みPRのタイトルから上げ幅を決め、breaking changeを見つけたらエラーで止まる。
   majorは`bump: major`か`version`の明示指定でしか上がらない。
 - `release.yml`と`publish-release.yml`は`contents:write`と`pull-requests:write`を持つPAT（repository secretの`GH_TOKEN`）を使う。
