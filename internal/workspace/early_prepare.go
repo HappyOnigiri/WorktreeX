@@ -42,7 +42,7 @@ func (p *Preparer) PrepareStaged(ctx context.Context, slotID string, repositorie
 			return nil, err
 		}
 		item := &stagedRepository{Preparation: request, plan: earlyPlan{log: p.Log}}
-		err = p.timePhase("git-register", func() error {
+		err = p.timePhase(ctx, "git-register", func() error {
 			return p.Git.WithCommonDirLock(ctx, string(request.Repository.CommonDir), func(lockCtx context.Context) error {
 				var beginErr error
 				item.locked, beginErr = p.beginPrepare(lockCtx, request.Repository, target, request.OID, slotID, preparePhaseCreate, root)
@@ -56,13 +56,13 @@ func (p *Preparer) PrepareStaged(ctx context.Context, slotID string, repositorie
 		if item.locked.existing {
 			return nil, fmt.Errorf("%w: staged preparation target already exists", state.ErrOwnership)
 		}
-		if err := p.timePhase("early-index", func() error { return p.buildEarlyPlan(ctx, item) }); err != nil {
+		if err := p.timePhase(ctx, "early-index", func() error { return p.buildEarlyPlan(ctx, item) }); err != nil {
 			return nil, err
 		}
-		if err := p.timePhase("early-checkout", func() error { return p.checkoutStage(ctx, item, true, nil) }); err != nil {
+		if err := p.timePhase(ctx, "early-checkout", func() error { return p.checkoutStage(ctx, item, true, nil) }); err != nil {
 			return nil, err
 		}
-		if err := p.timePhase("early-place", func() error {
+		if err := p.timePhase(ctx, "early-place", func() error {
 			return p.materializePlan(ctx, item.Repository, item.locked, &item.plan, true)
 		}); err != nil {
 			return nil, err
@@ -71,11 +71,11 @@ func (p *Preparer) PrepareStaged(ctx context.Context, slotID string, repositorie
 	// workspace root と全 repository をまとめて見る区間は、特定の repository には属さない。
 	p.Phases.Scope(PhaseScope{})
 	if rootStage != nil {
-		if err := p.timePhase("early-root", func() error { return rootStage(true) }); err != nil {
+		if err := p.timePhase(ctx, "early-root", func() error { return rootStage(true) }); err != nil {
 			return nil, err
 		}
 	}
-	if err := p.timePhase("early-ready", func() error {
+	if err := p.timePhase(ctx, "early-ready", func() error {
 		for _, item := range prepared {
 			if err := p.validatePreparedTarget(ctx, item.Repository, item.Target, item.OID, slotID, preparePhaseCreate, item.locked.root, item.locked.relative, item.locked.identity, "validate early readiness"); err != nil {
 				return err
@@ -93,17 +93,17 @@ func (p *Preparer) PrepareStaged(ctx context.Context, slotID string, repositorie
 		// 共有できる tracked file は checkout せず main から clone する。
 		// checkout してから同内容へ差し替えるのに比べ、同じ bytes の書き出しと読み比べが1往復ぶん要らない。
 		var placement cowPlacement
-		if err := p.timePhase("cow-place", func() error {
+		if err := p.timePhase(ctx, "cow-place", func() error {
 			var placeErr error
 			placement, placeErr = p.placeSharedFiles(ctx, item.Repository, item, slotID)
 			return placeErr
 		}); err != nil {
 			return nil, err
 		}
-		if err := p.timePhase("checkout", func() error { return p.checkoutStage(ctx, item, false, placement.placed) }); err != nil {
+		if err := p.timePhase(ctx, "checkout", func() error { return p.checkoutStage(ctx, item, false, placement.placed) }); err != nil {
 			return nil, err
 		}
-		if err := p.timePhase("cow-verify", func() error { return p.settleCOWPlacement(ctx, item, placement.placed) }); err != nil {
+		if err := p.timePhase(ctx, "cow-verify", func() error { return p.settleCOWPlacement(ctx, item, placement.placed) }); err != nil {
 			return nil, err
 		}
 		if err := p.verifyPreparedLFS(item.locked.root, item.locked.relative, item.Repository); err != nil {
@@ -112,14 +112,14 @@ func (p *Preparer) PrepareStaged(ctx context.Context, slotID string, repositorie
 		// post-checkout より前に実体化する。ユーザーの hook が submodule を前提にできるようにし、
 		// hook 側の `git submodule update` も no-op で済ませるためである。
 		var submoduleResult submodulePhaseResult
-		if err := p.timePhase("submodule", func() error {
+		if err := p.timePhase(ctx, "submodule", func() error {
 			var err error
 			submoduleResult, err = p.submodulePhaseWithResult(ctx, item.Repository, item.Target, item.OID, item.locked.identity)
 			return err
 		}); err != nil {
 			return nil, err
 		}
-		if err := p.timePhase("post-checkout", func() error {
+		if err := p.timePhase(ctx, "post-checkout", func() error {
 			return p.runPostCheckoutWithSubmodules(ctx, item.Repository, item.Target, item.locked.identity, item.OID, submoduleResult)
 		}); err != nil {
 			return nil, err
@@ -134,7 +134,7 @@ func (p *Preparer) PrepareStaged(ctx context.Context, slotID string, repositorie
 	}
 	p.Phases.Scope(PhaseScope{})
 	if rootStage != nil {
-		if err := p.timePhase("root", func() error { return rootStage(false) }); err != nil {
+		if err := p.timePhase(ctx, "root", func() error { return rootStage(false) }); err != nil {
 			return nil, err
 		}
 	}

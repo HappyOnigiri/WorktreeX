@@ -297,6 +297,7 @@ func (e *cowErrors) result(ctx context.Context) error {
 
 // runCOWBatches は着手済みの batch を完走させ、失敗後は新規 batch の投入だけを止める。
 // derived context の cancel は使わない。内部 cancel が集約結果に混ざると auto でも hard fail するためである。
+// 待機用準備では batch の投入前に関門で待ち、利用者が待つ準備の間は新しい batch を始めない。
 func runCOWBatches[T any](ctx context.Context, workers int, batches [][]T, share func(context.Context, []T) error) error {
 	if workers < 1 {
 		workers = 1
@@ -306,6 +307,9 @@ func runCOWBatches[T any](ctx context.Context, workers int, batches [][]T, share
 	var wait sync.WaitGroup
 	gate := make(chan struct{}, workers)
 	for _, batch := range batches {
+		if yieldToPriority(ctx) != nil {
+			break
+		}
 		// 実行枠を取ってから判定する。先に判定すると、枠待ちの間に起きた失敗を見落として次の batch を投入する。
 		gate <- struct{}{}
 		if stop.Load() || ctx.Err() != nil {

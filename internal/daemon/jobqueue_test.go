@@ -209,3 +209,64 @@ func TestJobSlotIsReturnedWhileWaitingForACommonDirectoryLock(t *testing.T) {
 	}
 	q.finish(blocked, blockedSlot)
 }
+
+// 待機用準備は全 workspace で 1 本ずつ流し、保守枠が空いていても 2 本目を始めない。
+func TestJobQueueRunsStandbyPreparationOneAtATime(t *testing.T) {
+	t.Parallel()
+	q := newJobQueue(1)
+	q.add(queuedJob{id: "standby-1", class: jobClassStandby})
+	q.add(queuedJob{id: "standby-2", class: jobClassStandby})
+	q.add(queuedJob{id: "remove", class: jobClassMaintenance})
+	first, firstSlot, ok := q.take()
+	if !ok || first.id != "remove" {
+		t.Fatalf("first dispatch=%+v ok=%v, want the maintenance job", first, ok)
+	}
+	standby, standbySlot, ok := q.take()
+	if !ok || standby.id != "standby-1" {
+		t.Fatalf("standby dispatch=%+v ok=%v, want the standby job that arrived first", standby, ok)
+	}
+	if work, _, ok := q.take(); ok {
+		t.Fatalf("second standby preparation started while the first was running: %+v", work)
+	}
+	q.finish(standby, standbySlot)
+	next, nextSlot, ok := q.take()
+	if !ok || next.id != "standby-2" {
+		t.Fatalf("next dispatch=%+v ok=%v, want the second standby job", next, ok)
+	}
+	q.finish(next, nextSlot)
+	q.finish(first, firstSlot)
+}
+
+// 待機用準備の関門は、利用者向けジョブが待ち行列か実行中にある間は閉じ、ロック待ちで枠を返していても開かない。
+func TestJobQueueWaitHoldsWhileInteractiveJobsRemain(t *testing.T) {
+	t.Parallel()
+	q := newJobQueue(1)
+	if err := q.Wait(context.Background()); err != nil {
+		t.Fatalf("Wait without interactive jobs=%v, want nil", err)
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	q.add(queuedJob{id: "prepare", class: jobClassInteractive})
+	if err := q.Wait(canceled); err == nil {
+		t.Fatal("Wait passed while an interactive job was queued")
+	}
+	work, slot, ok := q.take()
+	if !ok {
+		t.Fatal("interactive job was not dispatched")
+	}
+	slot.Release()
+	if err := q.Wait(canceled); err == nil {
+		t.Fatal("Wait passed while an interactive job was waiting for a lock")
+	}
+	done := make(chan error, 1)
+	go func() { done <- q.Wait(context.Background()) }()
+	q.finish(work, slot)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Wait after the interactive job finished=%v, want nil", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Wait did not return after the interactive job finished")
+	}
+}

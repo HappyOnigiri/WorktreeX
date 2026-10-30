@@ -233,9 +233,9 @@ func TestMutationDaemonOpsMessageAndUsageBoundaries(t *testing.T) {
 		}
 	})
 
-	t.Run("job class names distinguish both execution pools", func(t *testing.T) {
-		if jobClassInteractive.String() != "interactive" || jobClassMaintenance.String() != "maintenance" {
-			t.Fatalf("class names=%q/%q", jobClassInteractive.String(), jobClassMaintenance.String())
+	t.Run("job class names distinguish every execution pool", func(t *testing.T) {
+		if jobClassInteractive.String() != "interactive" || jobClassMaintenance.String() != "maintenance" || jobClassStandby.String() != "standby" {
+			t.Fatalf("class names=%q/%q/%q", jobClassInteractive.String(), jobClassMaintenance.String(), jobClassStandby.String())
 		}
 	})
 

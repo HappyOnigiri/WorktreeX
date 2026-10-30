@@ -24,7 +24,7 @@ func (p *Preparer) ValidateUpdateCandidate(ctx context.Context, repo discovery.R
 	// 並び順が優先順位で、準備検査の失敗を差分の読み取り失敗より先に返す。
 	if err := runChecksInOrder(ctx, []func(context.Context) error{
 		func(ctx context.Context) error {
-			return p.timePhase("candidate-ready", func() error { return p.ValidateReady(ctx, repo, target, oldOID) })
+			return p.timePhase(ctx, "candidate-ready", func() error { return p.ValidateReady(ctx, repo, target, oldOID) })
 		},
 		func(ctx context.Context) (err error) {
 			diff, err = p.readUpdateTreeDiff(ctx, repo, oldOID, tree.OID)
@@ -36,7 +36,7 @@ func (p *Preparer) ValidateUpdateCandidate(ctx context.Context, repo discovery.R
 	if err := diff.rejectIneligible(); err != nil {
 		return err
 	}
-	return p.timePhase("candidate-checks", func() error {
+	return p.timePhase(ctx, "candidate-checks", func() error {
 		root, err := p.destinationRoot(target)
 		if err != nil {
 			return err

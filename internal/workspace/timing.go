@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -187,7 +188,11 @@ func RepositoryScope(repo discovery.Repository, index, total int) PhaseScope {
 
 // timePhase は run の所要時間を name の区間へ記録する。
 // 失敗した回も記録するのは、どの区間で止まったかが遅さの調査に必要だからである。
-func (p *Preparer) timePhase(name string, run func() error) error {
+// 開始前に待機用準備の関門で待ち、待った時間は区間に含めない。
+func (p *Preparer) timePhase(ctx context.Context, name string, run func() error) error {
+	if err := yieldToPriority(ctx); err != nil {
+		return err
+	}
 	start := time.Now()
 	running := p.Phases.begin(name, start)
 	err := run()

@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -49,7 +50,7 @@ func TestPhaseTimingsIsOptional(t *testing.T) {
 	}
 	preparer := &Preparer{}
 	failure := errors.New("checkout failed")
-	if err := preparer.timePhase("checkout", func() error { return failure }); !errors.Is(err, failure) {
+	if err := preparer.timePhase(context.Background(), "checkout", func() error { return failure }); !errors.Is(err, failure) {
 		t.Fatalf("timePhase err=%v, want the wrapped error", err)
 	}
 }
@@ -59,7 +60,7 @@ func TestTimePhaseRecordsFailedRuns(t *testing.T) {
 	t.Parallel()
 	preparer := &Preparer{Phases: &PhaseTimings{}}
 	failure := errors.New("prepare command failed")
-	if err := preparer.timePhase("prepare-command", func() error { return failure }); !errors.Is(err, failure) {
+	if err := preparer.timePhase(context.Background(), "prepare-command", func() error { return failure }); !errors.Is(err, failure) {
 		t.Fatalf("timePhase err=%v", err)
 	}
 	if failed := preparer.Phases.Failed(); failed != "prepare-command" {
@@ -70,7 +71,7 @@ func TestTimePhaseRecordsFailedRuns(t *testing.T) {
 		t.Fatalf("phases=%+v, want the failed phase recorded", phases)
 	}
 	secondFailure := errors.New("link failed")
-	if err := preparer.timePhase("link", func() error { return secondFailure }); !errors.Is(err, secondFailure) {
+	if err := preparer.timePhase(context.Background(), "link", func() error { return secondFailure }); !errors.Is(err, secondFailure) {
 		t.Fatalf("second timePhase err=%v", err)
 	}
 	if failed := preparer.Phases.Failed(); failed != "prepare-command" {
@@ -82,7 +83,7 @@ func TestTimePhaseRecordsFailedRuns(t *testing.T) {
 func TestTimePhaseDoesNotRecordSuccessfulRunsAsFailed(t *testing.T) {
 	t.Parallel()
 	preparer := &Preparer{Phases: &PhaseTimings{}}
-	if err := preparer.timePhase("checkout", func() error { return nil }); err != nil {
+	if err := preparer.timePhase(context.Background(), "checkout", func() error { return nil }); err != nil {
 		t.Fatalf("timePhase err=%v", err)
 	}
 	if failed := preparer.Phases.Failed(); failed != "" {
@@ -97,7 +98,7 @@ func TestPhaseTimingsActiveReportsTheInnermostRunningPhase(t *testing.T) {
 	if _, ok := preparer.Phases.Active(); ok {
 		t.Fatal("a phase was reported as running before any phase started")
 	}
-	err := preparer.timePhase("checkout", func() error {
+	err := preparer.timePhase(context.Background(), "checkout", func() error {
 		active, ok := preparer.Phases.Active()
 		if !ok || active.Name != "checkout" {
 			t.Fatalf("active=%q ok=%t, want the outer phase", active.Name, ok)
@@ -105,7 +106,7 @@ func TestPhaseTimingsActiveReportsTheInnermostRunningPhase(t *testing.T) {
 		if active.Start.IsZero() {
 			t.Fatal("the running phase has no start time")
 		}
-		if err := preparer.timePhase("cow", func() error {
+		if err := preparer.timePhase(context.Background(), "cow", func() error {
 			if active, ok := preparer.Phases.Active(); !ok || active.Name != "cow" {
 				t.Fatalf("active=%q ok=%t, want the inner phase", active.Name, ok)
 			}
@@ -130,7 +131,7 @@ func TestPhaseTimingsActiveReportsTheInnermostRunningPhase(t *testing.T) {
 func TestPhaseTimingsActiveIgnoresCompletedAggregates(t *testing.T) {
 	t.Parallel()
 	preparer := &Preparer{Phases: &PhaseTimings{}}
-	err := preparer.timePhase("cow", func() error {
+	err := preparer.timePhase(context.Background(), "cow", func() error {
 		preparer.Phases.Add("cow.compare", 4, time.Second)
 		active, ok := preparer.Phases.Active()
 		if !ok || active.Name != "cow" {
@@ -151,7 +152,7 @@ func TestPhaseTimingsActiveIsOptional(t *testing.T) {
 		t.Fatal("a nil recorder reported a running phase")
 	}
 	preparer := &Preparer{}
-	if err := preparer.timePhase("checkout", func() error { return nil }); err != nil {
+	if err := preparer.timePhase(context.Background(), "checkout", func() error { return nil }); err != nil {
 		t.Fatalf("timePhase err=%v", err)
 	}
 }
@@ -162,7 +163,7 @@ func TestPhaseTimingsActiveCarriesTheScopeOfItsStart(t *testing.T) {
 	t.Parallel()
 	preparer := &Preparer{Phases: &PhaseTimings{}}
 	preparer.Phases.Scope(PhaseScope{Target: "app", Index: 1, Total: 5})
-	err := preparer.timePhase("checkout", func() error {
+	err := preparer.timePhase(context.Background(), "checkout", func() error {
 		active, ok := preparer.Phases.Active()
 		if !ok || active.Scope != (PhaseScope{Target: "app", Index: 1, Total: 5}) {
 			t.Fatalf("active=%+v ok=%t, want the scope set before the phase started", active, ok)
@@ -178,7 +179,7 @@ func TestPhaseTimingsActiveCarriesTheScopeOfItsStart(t *testing.T) {
 		t.Fatalf("timePhase err=%v", err)
 	}
 	preparer.Phases.Scope(PhaseScope{})
-	if err := preparer.timePhase("root", func() error {
+	if err := preparer.timePhase(context.Background(), "root", func() error {
 		if active, _ := preparer.Phases.Active(); active.Scope != (PhaseScope{}) {
 			t.Fatalf("active=%+v, want no target for a workspace-wide phase", active)
 		}

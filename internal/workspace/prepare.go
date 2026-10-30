@@ -216,7 +216,7 @@ func (p *Preparer) prepareOwned(ctx context.Context, repo discovery.Repository, 
 	// `worktree add` が checkout しない分をここで展開する。hook の実行位置を wx が決めるためこの 1 コマンドだけ hook を止め、post-checkout は completePrepare が実行する。
 	// 中断した復元の再実行（locked.existing）でも飛ばさず `--force` で要求 OID へ揃える。未展開のまま READY にせず、復元本体の read-tree が後段で snapshot を当て直す。
 	// `--no-recurse-submodules` が無いと、実体化前の submodule index を reset できず checkout ごと失敗する（gitdir は linked worktree 側の `$GIT_DIR/modules/<name>` に解決される）。
-	if err := p.timePhase("checkout", func() error {
+	if err := p.timePhase(ctx, "checkout", func() error {
 		_, err := p.RunGitInWorktree(ctx, target, targetIdentity, nil, nil, "-c", "core.hooksPath=/dev/null", "checkout", "--detach", "--force", "--no-recurse-submodules", oid)
 		return err
 	}); err != nil {
@@ -258,15 +258,15 @@ func (p *Preparer) completePrepare(ctx context.Context, repo discovery.Repositor
 		return fmt.Errorf("wx worktree ownership changed before includes: %w", err)
 	}
 	// include・link・prepare command が submodule 配下を前提にできるよう、配置より前に実体化する。
-	if err := p.timePhase("submodule", submodules); err != nil {
+	if err := p.timePhase(ctx, "submodule", submodules); err != nil {
 		return err
 	}
 	// post-checkout は submodule の実体化後・include/link の配置前に実行する。
 	// hook が submodule の中身を前提にでき、かつ wx が置く include/link をまだ見ない位置である。
-	if err := p.timePhase("post-checkout", postCheckout); err != nil {
+	if err := p.timePhase(ctx, "post-checkout", postCheckout); err != nil {
 		return err
 	}
-	if err := p.timePhase("place", includes); err != nil {
+	if err := p.timePhase(ctx, "place", includes); err != nil {
 		return err
 	}
 	if err := p.validatePreparedTarget(ctx, repo, target, oid, slotID, phase, lockedRoot, lockedRelativeTarget, targetIdentity, "wx worktree ownership changed before links"); err != nil {
@@ -274,14 +274,14 @@ func (p *Preparer) completePrepare(ctx context.Context, repo discovery.Repositor
 	}
 	// snapshot と現在の main で ignore 規則が異なるため、復元先で symlink 形を無視できる場合だけ link を作る。
 	// source 側だけを確認すると、古い `/.tools/` のような directory-only 規則で復元後の tree が変わる。
-	if err := p.timePhase("link", links); err != nil {
+	if err := p.timePhase(ctx, "link", links); err != nil {
 		return err
 	}
 	if phase == preparePhaseCreate {
 		if err := p.validatePreparedTarget(ctx, repo, target, oid, slotID, phase, lockedRoot, lockedRelativeTarget, targetIdentity, "wx worktree ownership changed before prepare command"); err != nil {
 			return fmt.Errorf("wx worktree ownership changed before prepare command: %w", err)
 		}
-		if err := p.timePhase("prepare-command", func() error { return p.runPrepareWithIdentity(ctx, repo, target, "") }); err != nil {
+		if err := p.timePhase(ctx, "prepare-command", func() error { return p.runPrepareWithIdentity(ctx, repo, target, "") }); err != nil {
 			return err
 		}
 		if err := p.verifyPreparedTargetIdentity(lockedRoot, lockedRelativeTarget, targetIdentity); err != nil {
@@ -289,7 +289,7 @@ func (p *Preparer) completePrepare(ctx context.Context, repo discovery.Repositor
 		}
 	}
 	if phase == preparePhaseCreate {
-		if err := p.timePhase("tracked-status", func() error {
+		if err := p.timePhase(ctx, "tracked-status", func() error {
 			return p.validateTrackedCleanOwned(ctx, target, lockedRoot, lockedRelativeTarget, targetIdentity, "tracked status")
 		}); err != nil {
 			return err
@@ -318,7 +318,7 @@ func (p *Preparer) completePrepare(ctx context.Context, repo discovery.Repositor
 		return nil
 	}
 	if !placement.complete() {
-		if err := p.timePhase("cow", func() error {
+		if err := p.timePhase(ctx, "cow", func() error {
 			return p.compactWorktree(ctx, repo, target, oid, slotID, phase, targetIdentity, placement.scope())
 		}); err != nil {
 			return err
@@ -326,7 +326,7 @@ func (p *Preparer) completePrepare(ctx context.Context, repo discovery.Repositor
 	}
 	// submodule の checkout は親の配置方式より後に実体化するため、その対象に入らない。
 	// 親の配置が完了した回でも、submodule だけは専用の置換共有を必ず行う。
-	if err := p.timePhase("submodule-cow", func() error {
+	if err := p.timePhase(ctx, "submodule-cow", func() error {
 		return p.compactSubmoduleWorktree(ctx, repo, target, oid, slotID, phase, targetIdentity, submoduleResult, locked.existing)
 	}); err != nil {
 		return err
@@ -335,13 +335,13 @@ func (p *Preparer) completePrepare(ctx context.Context, repo discovery.Repositor
 	// tracked 内容が変わっていないことの独立検証も兼ねる。先行配置した回も、配置した path 以外の検証はここだけが行う。
 	// 配置方式の照合が index を refresh 済みなので、その回のこの status は stat の確認だけで済む。
 	if phaseNeedsTrackedStatusRefresh(phase) {
-		if err := p.timePhase("tracked-status-refresh", func() error {
+		if err := p.timePhase(ctx, "tracked-status-refresh", func() error {
 			return p.validateTrackedCleanOwned(ctx, target, lockedRoot, lockedRelativeTarget, targetIdentity, "tracked status refresh")
 		}); err != nil {
 			return err
 		}
 	}
-	if err := p.timePhase("ready-lock", func() error {
+	if err := p.timePhase(ctx, "ready-lock", func() error {
 		return p.Git.WithCommonDirLock(ctx, string(repo.CommonDir), func(lockCtx context.Context) error {
 			return p.finishPrepare(lockCtx, repo, target, oid, slotID, phase, lockedRoot, lockedRelativeTarget, targetIdentity)
 		})
@@ -507,7 +507,7 @@ func (p *Preparer) PrepareResumeWithIdentity(ctx context.Context, repo discovery
 	if err := p.compactWorktree(ctx, repo, target, oid, slotID, preparePhaseRestore, expectedIdentity, nil); err != nil {
 		return err
 	}
-	if err := p.timePhase("submodule-cow", func() error {
+	if err := p.timePhase(ctx, "submodule-cow", func() error {
 		return p.compactSubmoduleWorktree(ctx, repo, target, oid, slotID, preparePhaseRestore, expectedIdentity, nil, true)
 	}); err != nil {
 		return err

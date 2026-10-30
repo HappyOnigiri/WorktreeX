@@ -12,22 +12,32 @@ type jobClass int
 const (
 	// jobClassInteractive は利用者が完了を待つ準備・復元・保存。枠数は pool.preparation_concurrency。
 	jobClassInteractive jobClass = iota
-	// jobClassMaintenance は待機枠の補充と自動削除。利用者向けの枠は借りず、専用枠だけで動かす。
+	// jobClassMaintenance は補充の計画と自動削除。利用者向けの枠は借りず、専用枠だけで動かす。
 	jobClassMaintenance
+	// jobClassStandby は待機用 slot の準備と idle 更新。全 workspace で 1 本ずつ流し、利用者向けの処理がある間は工程の切れ目で止まる。
+	jobClassStandby
 	jobClassCount
 )
 
 func (c jobClass) String() string {
-	if c == jobClassInteractive {
+	switch c {
+	case jobClassInteractive:
 		return "interactive"
+	case jobClassStandby:
+		return "standby"
+	default:
+		return "maintenance"
 	}
-	return "maintenance"
 }
 
 // maintenanceJobSlots は保守クラスの実行枠数。preparation_concurrency=1 でも保守と利用者処理が互いを待たないよう別に確保する。
-// 1 本だと大きい repository の補充・回収が枠を数十秒占め、他 workspace の補充が待って READY が枯れる。
-// 律速はディスク帯域ではなく枠数なので、2 本にすると個々の遅延より待ちの減少が上回る。
+// 1 本だと大きい repository の回収が枠を数十秒占め、他 workspace の補充の計画や回収が待つ。
 const maintenanceJobSlots = 2
+
+// standbyJobSlots は待機用準備の実行枠数。
+// 並列にすると同じディスクを取り合って各準備が交互に進み、合計時間はほぼ変わらないまま最初の READY が最後の完了まで遅れる。
+// この枠はロック待ちでも手放さない。手放すと後発の準備が割り込み、交互に進む状態へ戻るためである。
+const standbyJobSlots = 1
 
 // queuedJobCapacity はクラスごとの未実行キューの上限。
 // 溢れた分は PENDING の durable job として残り、maintainJobs の定期回収が拾う。
@@ -54,9 +64,11 @@ type jobExecutionSlot interface {
 // jobQueue はクラス別の待ち行列と実行枠を持つ。
 // 到着順を基本とし、後から来たジョブが同じクラスの既存ジョブを追い越さない。
 type jobQueue struct {
-	mu       sync.Mutex
-	pending  [jobClassCount][]queuedJob
-	running  [jobClassCount]int
+	mu      sync.Mutex
+	pending [jobClassCount][]queuedJob
+	running [jobClassCount]int
+	// active は取り出してから finish までのジョブ数。ロック待ちで枠を返している間も数える。
+	active   [jobClassCount]int
 	limits   [jobClassCount]int
 	inflight map[string]bool
 	closed   bool
@@ -67,6 +79,7 @@ type jobQueue struct {
 func newJobQueue(interactive int) *jobQueue {
 	q := &jobQueue{inflight: map[string]bool{}, changed: make(chan struct{})}
 	q.limits[jobClassMaintenance] = maintenanceJobSlots
+	q.limits[jobClassStandby] = standbyJobSlots
 	q.setInteractiveLimit(interactive)
 	return q
 }
@@ -139,6 +152,7 @@ func (q *jobQueue) take() (queuedJob, *jobSlot, bool) {
 		work := q.pending[class][0]
 		q.pending[class] = q.pending[class][1:]
 		q.running[class]++
+		q.active[class]++
 		return work, &jobSlot{queue: q, class: class, held: true}, true
 	}
 	return queuedJob{}, nil, false
@@ -157,7 +171,28 @@ func (q *jobQueue) finish(work queuedJob, slot jobExecutionSlot) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	delete(q.inflight, work.id)
+	q.active[work.class]--
 	q.notifyLocked()
+}
+
+// Wait は利用者向けのジョブが待ち行列にも実行中にも無くなるまで待つ。待機用準備が工程の切れ目で呼ぶ。
+// ロック待ちで枠を返している利用者向けジョブも実行中に数え、止めた準備がディスクを取り合わないようにする。
+// context が終わったときだけ error を返す。
+func (q *jobQueue) Wait(ctx context.Context) error {
+	for {
+		q.mu.Lock()
+		idle := len(q.pending[jobClassInteractive]) == 0 && q.active[jobClassInteractive] == 0
+		changed := q.changed
+		q.mu.Unlock()
+		if idle {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-changed:
+		}
+	}
 }
 
 // close は新しいジョブの受け付けと配送を止める。実行中のジョブは中断せず、枠の返却は受け付ける。
