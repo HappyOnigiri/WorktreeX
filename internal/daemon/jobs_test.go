@@ -55,8 +55,8 @@ func TestScheduleLeavesOverflowForDurableRecovery(t *testing.T) {
 	for index := 0; index <= queuedJobCapacity; index++ {
 		m.schedule(state.Job{ID: fmt.Sprintf("standby-%d", index), Kind: "PREPARE"})
 	}
-	if pending, _ := m.jobQueue.counts(jobClassMaintenance); pending != queuedJobCapacity {
-		t.Fatalf("maintenance queue length=%d, want %d", pending, queuedJobCapacity)
+	if pending, _ := m.jobQueue.counts(jobClassStandby); pending != queuedJobCapacity {
+		t.Fatalf("standby queue length=%d, want %d", pending, queuedJobCapacity)
 	}
 	work, slot, ok := m.jobQueue.take()
 	if !ok || work.id != "standby-0" {
@@ -160,7 +160,7 @@ func TestJobClassOfSeparatesUserFacingWorkFromMaintenance(t *testing.T) {
 		want jobClass
 	}{
 		{job: state.Job{Kind: "PREPARE", SessionID: "session"}, want: jobClassInteractive},
-		{job: state.Job{Kind: "PREPARE"}, want: jobClassMaintenance},
+		{job: state.Job{Kind: "PREPARE"}, want: jobClassStandby},
 		{job: state.Job{Kind: "RESTORE", SessionID: "session"}, want: jobClassInteractive},
 		{job: state.Job{Kind: "SNAPSHOT", SessionID: "session"}, want: jobClassInteractive},
 		{job: state.Job{Kind: "ENSURE_STANDBY"}, want: jobClassMaintenance},

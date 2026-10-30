@@ -20,14 +20,13 @@ const (
 )
 
 func (c jobClass) String() string {
-	switch c {
-	case jobClassInteractive:
+	if c == jobClassInteractive {
 		return "interactive"
-	case jobClassStandby:
-		return "standby"
-	default:
-		return "maintenance"
 	}
+	if c == jobClassStandby {
+		return "standby"
+	}
+	return "maintenance"
 }
 
 // maintenanceJobSlots は保守クラスの実行枠数。preparation_concurrency=1 でも保守と利用者処理が互いを待たないよう別に確保する。
