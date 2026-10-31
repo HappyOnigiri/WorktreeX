@@ -120,12 +120,18 @@ func TestEnsureStandbyDoesNotResolveBranchesAtWarmCount(t *testing.T) {
 	}
 }
 
-// 貸出付きの UPDATE は利用者が待っているので利用者向け、idle 更新は保守用の枠で走らせる。
+// 貸出付きの UPDATE は利用者が待っているので利用者向け、idle 更新は待機用準備の枠で走らせる。
 func TestJobClassOfSeparatesIdleStandbyUpdate(t *testing.T) {
 	if got := jobClassOf(state.Job{Kind: "UPDATE", SessionID: "session"}); got != jobClassInteractive {
 		t.Fatalf("leased update class=%v, want interactive", got)
 	}
-	if got := jobClassOf(state.Job{Kind: "UPDATE"}); got != jobClassMaintenance {
-		t.Fatalf("idle update class=%v, want maintenance", got)
+	if got := jobClassOf(state.Job{Kind: "UPDATE"}); got != jobClassStandby {
+		t.Fatalf("idle update class=%v, want standby", got)
+	}
+	if got := jobClassOf(state.Job{Kind: "PREPARE"}); got != jobClassStandby {
+		t.Fatalf("standby prepare class=%v, want standby", got)
+	}
+	if got := jobClassOf(state.Job{Kind: "PREPARE", SessionID: "session"}); got != jobClassInteractive {
+		t.Fatalf("leased prepare class=%v, want interactive", got)
 	}
 }

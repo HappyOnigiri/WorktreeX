@@ -21,18 +21,18 @@ const maxJobAttempts = 8
 
 // jobClassOf は job の実行クラスを、その job row の事実だけから決める。
 // SNAPSHOT は保存と将来の resume の前提なので、利用者が明示的に待っているかによらず利用者向けに置く。
-// 待機用の準備・補充・自動削除は保守用とし、clean が完了を待つ削除だけを jobQueue.promote で昇格させる。
+// 待機用の準備と idle 更新は待機用準備の枠、補充の計画と自動削除は保守用とし、clean が完了を待つ削除だけを jobQueue.promote で昇格させる。
 func jobClassOf(job state.Job) jobClass {
 	switch job.Kind {
 	case "PREPARE":
 		if job.SessionID != "" {
 			return jobClassInteractive
 		}
-		return jobClassMaintenance
+		return jobClassStandby
 	case "UPDATE":
-		// session を持たない UPDATE は待機中の standby を先回りで合わせる保守で、待っている利用者がいない。
+		// session を持たない UPDATE は待機中の standby を先回りで合わせる処理で、待っている利用者がいない。
 		if job.SessionID == "" {
-			return jobClassMaintenance
+			return jobClassStandby
 		}
 		return jobClassInteractive
 	case "RESTORE", "SNAPSHOT":
@@ -87,9 +87,14 @@ func (m *Manager) executeJob(work queuedJob, slot jobExecutionSlot) {
 		barrier(job)
 	}
 	jobCtx, cancel := context.WithCancel(m.ctx)
-	// 実行枠をロック待ちの手放し先として渡す。
-	// 同じリポジトリの Git 管理操作を待つだけのジョブが、無関係なリポジトリの枠を占有しなくなる。
-	jobCtx = gitx.WithLockWaiter(jobCtx, slot)
+	if work.class == jobClassStandby {
+		// 待機用準備は枠を手放さず、利用者向けの処理がある間は工程の切れ目で止まる。
+		jobCtx = workspace.WithPriorityGate(jobCtx, m.jobQueue)
+	} else {
+		// 実行枠をロック待ちの手放し先として渡す。
+		// 同じリポジトリの Git 管理操作を待つだけのジョブが、無関係なリポジトリの枠を占有しなくなる。
+		jobCtx = gitx.WithLockWaiter(jobCtx, slot)
+	}
 	done := make(chan struct{})
 	m.startBackground(func() {
 		ticker := time.NewTicker(10 * time.Second)

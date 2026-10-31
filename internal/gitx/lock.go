@@ -16,8 +16,9 @@ type LockWaiter interface {
 }
 
 type (
-	lockWaiterKey struct{}
-	heldLocksKey  struct{}
+	lockWaiterKey    struct{}
+	heldLocksKey     struct{}
+	commonDirHeldKey struct{}
 )
 
 // WithLockWaiter は、この ctx を使うロック取得が待機前に手放す資源を登録する。
@@ -121,11 +122,24 @@ func canceled(ctx context.Context) error {
 // AcquireCommonDirLock は repository 共有の Git 管理情報を書き換える区間の排他を取る。
 // 呼び出し側が区間を分けたい場合に使い、それ以外は WithCommonDirLock を使う。
 func (r *Runner) AcquireCommonDirLock(ctx context.Context, common string) (context.Context, func(), error) {
-	return r.locks.Acquire(ctx, normalizeLockKey(common))
+	locked, release, err := r.locks.Acquire(ctx, normalizeLockKey(common))
+	if err != nil {
+		return locked, release, err
+	}
+	return context.WithValue(locked, commonDirHeldKey{}, true), release, nil
 }
 
 // WithCommonDirLock は common directory の排他を保持したまま fn を呼ぶ。
 // fn には取得済みを記録した ctx を渡すので、内側の同じ common への要求は待たずに通る。
 func (r *Runner) WithCommonDirLock(ctx context.Context, common string, fn func(context.Context) error) error {
-	return r.locks.With(ctx, normalizeLockKey(common), fn)
+	return r.locks.With(ctx, normalizeLockKey(common), func(locked context.Context) error {
+		return fn(context.WithValue(locked, commonDirHeldKey{}, true))
+	})
+}
+
+// HoldsCommonDirLock は ctx の経路がいずれかの common directory の排他を保持しているかを返す。
+// 保持したまま他の処理を待つと、同じ repository を操作する側がこの排他で止まるため、待機する側が確かめる。
+func HoldsCommonDirLock(ctx context.Context) bool {
+	held, _ := ctx.Value(commonDirHeldKey{}).(bool)
+	return held
 }

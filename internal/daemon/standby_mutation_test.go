@@ -659,9 +659,12 @@ func TestScheduleStandbyJobSkipsUnreservedSlot(t *testing.T) {
 	manager := &Manager{ctx: context.Background(), jobQueue: newJobQueue(1)}
 	defer manager.jobQueue.close()
 	pending := func() int {
-		interactive, _ := manager.jobQueue.counts(jobClassInteractive)
-		maintenance, _ := manager.jobQueue.counts(jobClassMaintenance)
-		return interactive + maintenance
+		total := 0
+		for class := jobClassInteractive; class < jobClassCount; class++ {
+			pending, _ := manager.jobQueue.counts(class)
+			total += pending
+		}
+		return total
 	}
 
 	manager.scheduleStandbyJob(state.Job{})

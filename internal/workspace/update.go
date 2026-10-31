@@ -73,7 +73,7 @@ func (p *Preparer) UpdateCheckoutLocked(ctx context.Context, repo discovery.Repo
 	if err != nil {
 		return StandbyUpdateStage{}, err
 	}
-	if err := p.timePhase("update-validate", func() error {
+	if err := p.timePhase(ctx, "update-validate", func() error {
 		return p.validateUpdating(ctx, repo, target, oldOID, slotID, identity)
 	}); err != nil {
 		return StandbyUpdateStage{}, err
@@ -83,7 +83,7 @@ func (p *Preparer) UpdateCheckoutLocked(ctx context.Context, repo discovery.Repo
 		return StandbyUpdateStage{}, err
 	}
 	defer func() { _ = destination.Close() }()
-	if err := p.timePhase("update-place", func() error {
+	if err := p.timePhase(ctx, "update-place", func() error {
 		if err := validateRecordedPlacements(destination, previous); err != nil {
 			return err
 		}
@@ -91,13 +91,13 @@ func (p *Preparer) UpdateCheckoutLocked(ctx context.Context, repo discovery.Repo
 	}); err != nil {
 		return StandbyUpdateStage{}, err
 	}
-	if err := p.timePhase("update-checkout", func() error {
+	if err := p.timePhase(ctx, "update-checkout", func() error {
 		return p.checkoutUpdate(ctx, repo, target, identity, oldOID, newOID, destination)
 	}); err != nil {
 		return StandbyUpdateStage{}, err
 	}
 	retainedPrevious := unchangedPlacements(previous, desired)
-	if err := p.timePhase("update-place", func() error {
+	if err := p.timePhase(ctx, "update-place", func() error {
 		desired, err = p.filterUpdateLinks(ctx, destination, desired)
 		if err != nil {
 			return err
@@ -126,7 +126,7 @@ func (p *Preparer) UpdateFinishLocked(ctx context.Context, repo discovery.Reposi
 				p.Log.Info("standby update rerunning prepare command", "repository", string(repo.MainPath), "input_path", path, "old_oid", oldOID, "new_oid", newOID)
 			}
 		}
-		if err := p.timePhase("update-prepare-command", func() error {
+		if err := p.timePhase(ctx, "update-prepare-command", func() error {
 			return p.runPrepareWithIdentity(ctx, repo, target, identity)
 		}); err != nil {
 			return nil, err
@@ -139,7 +139,7 @@ func (p *Preparer) UpdateFinishLocked(ctx context.Context, repo discovery.Reposi
 	// commentlint:allow-long -- 3通りの省略の根拠はどれも検証を削る判断の安全性に要る
 	rerunPrepare := len(changedInputs) > 0
 	if rerunPrepare || p.compactsWorktree(repo) {
-		if err := p.timePhase("update-validate", func() error {
+		if err := p.timePhase(ctx, "update-validate", func() error {
 			if rerunPrepare {
 				return p.validateUpdating(ctx, repo, target, newOID, slotID, identity)
 			}
@@ -148,7 +148,7 @@ func (p *Preparer) UpdateFinishLocked(ctx context.Context, repo discovery.Reposi
 			return nil, err
 		}
 	}
-	if err := p.timePhase("update-cow", func() error {
+	if err := p.timePhase(ctx, "update-cow", func() error {
 		scope, err := p.updateCOWScope(ctx, repo, oldOID, newOID, previous, desired, rerunPrepare)
 		if err != nil {
 			return err
@@ -157,7 +157,7 @@ func (p *Preparer) UpdateFinishLocked(ctx context.Context, repo discovery.Reposi
 	}); err != nil {
 		return nil, err
 	}
-	if err := p.timePhase("update-validate", func() error {
+	if err := p.timePhase(ctx, "update-validate", func() error {
 		return p.validateUpdating(ctx, repo, target, newOID, slotID, identity)
 	}); err != nil {
 		return nil, err

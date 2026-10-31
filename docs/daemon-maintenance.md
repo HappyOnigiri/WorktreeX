@@ -5,8 +5,14 @@
 
 ## ジョブの分類と実行枠
 
-実行枠は利用者向け（config v2 の `system.pool.preparation_concurrency`）と保守用（`maintenanceJobSlots`）に分かれ、保守へ利用者向けの枠を貸さない。
-どちらも他方の待ちで飢えないことを優先し、利用者向けが満杯のときの待ちと、保守が並走する間に利用者向けの処理が遅くなる分は受け入れる。
+実行枠は利用者向け（config v2 の `system.pool.preparation_concurrency`）、保守用（`maintenanceJobSlots`）、待機用準備（`standbyJobSlots`）に分かれ、他のクラスへ利用者向けの枠を貸さない。
+どれも他方の待ちで飢えないことを優先し、利用者向けが満杯のときの待ちと、保守が並走する間に利用者向けの処理が遅くなる分は受け入れる。
+
+待機用準備（sessionを持たない`PREPARE`とidle更新の`UPDATE`）は全workspaceで1本ずつ流す。
+並列にすると同じディスクを取り合って交互に進み、合計時間はほぼ変わらないまま最初の`READY`が最後の完了まで遅れるためである。
+この枠はロック待ちでも返さない。返すと後発の準備が割り込み、交互に進む状態へ戻る。
+さらに待機用準備は、利用者向けのジョブが待ち行列か実行中にある間、工程の開始前とCoWのbatch投入前で止まる（`workspace.WithPriorityGate`）。
+実行中のGitやprepare commandは止めず、common directoryのロックを保持する区間でも止まらない。止まった準備が同じリポジトリの利用者向け操作を塞がないためである。
 
 分類は`jobClassOf`が job rowの事実だけから決め、DBへ永続化しない。
 実行中のclean runが完了を待つREMOVEだけを`advanceRemoving`が毎回の監視で利用者向けへ昇格させる。
@@ -29,7 +35,7 @@ slot lockは最上位のoperationで一度だけ取り、内側の経路には�
 ロックを取り直す区間の入口では、DB状態・root/path/marker/inode・Git登録・OID・lock reasonを検証し直す。
 
 取得順序はslot、common directory、実行枠に統一する。
-どちらのロックも待機に入る前に実行枠を返し、ロックを取得してから枠を取り直すので、Git管理操作を待つだけのジョブが無関係なリポジトリの枠を占有しない。
+待機用準備を除き、どちらのロックも待機に入る前に実行枠を返し、ロックを取得してから枠を取り直すので、Git管理操作を待つだけのジョブが無関係なリポジトリの枠を占有しない。
 利用者向けの枠が1本でも、枠の取り直しがロック取得後であるため循環待ちにならない。
 待機中もジョブの処理位置とlease更新は保たれ、ジョブ先頭からのretryにはならない。
 
@@ -86,7 +92,7 @@ OIDと配置の更新は貸出要求時と保守一巡のidle更新で行い、�
 idle更新は、完全一致しないが更新適合なREADY standbyを貸出を待たずに現在の要求へ合わせる。
 `.worktreeinclude`対象の書き換えのようにfingerprintだけがずれた待機枠を残すと、次の貸出がUPDATEの待ちを払い、`wx status`のREADYも実態とずれるためである。
 予約（`ReserveIdleStandbyUpdate`）はsessionを作らず`owner_session_id`を空のままPREPARINGへ移すので、更新中のslotは貸出候補から外れ、併走する貸出予約とは`slots`のcompare-and-swapで排他になる。
-jobはsessionを持たないため保守用の実行枠で走り、利用者向けの枠を奪わない。
+jobはsessionを持たないため待機用準備の実行枠で走り、利用者向けの枠を奪わない。
 
 歯止めは3つで、1巡につき1件だけ始める、待機枠が全てREADYに落ち着いたworkspaceだけを対象にする、workspaceごとに一定のcooldownを空ける。
 更新中はそのworkspaceのREADYが一時的に1本減るため、貸出が進行中のworkspaceでは始めない。
