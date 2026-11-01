@@ -14,6 +14,7 @@ var helpCatalogSession = map[string]Entry{
 Global options:
   --branch <branch|repo=branch>  choose a detached base (repeatable)
   --fresh                        resume conversation from the current base
+  --setup-check                  run the initial setup check again before launching
   -s, --select-worktree          select and save the workspace policy again
   -w, --worktree                 create a worktree without saving a policy
   -n, --no-worktree              run here without saving a policy
@@ -39,7 +40,7 @@ Commands:
   bench [--runs <n>] [--json]    measure how long a workspace takes to prepare
   config [<key> ...]             show or update configuration
   setup [--check] [--remove]     review and complete, or remove, the wx setup
-  setup-check [<workspace>]      validate one workspace without retiring standby slots
+  setup-check [--prompt] [<ws>]  validate one workspace without retiring standby slots
   resume <id> [agent] [args...]  restore a wx session
   discard-recovery <workspace>   discard recovery state that lost its refs
   forget <workspace-path>        stop managing a workspace
@@ -53,6 +54,7 @@ Commands:
 全体オプション:
   --branch <branch|repo=branch>  detached base を選択（複数指定可）
   --fresh                        現在の base から会話を再開
+  --setup-check                  起動前に初回セットアップ検査を再実行
   -s, --select-worktree          workspace 方針を再選択して保存
   -w, --worktree                 方針を保存せず worktree を作成
   -n, --no-worktree              方針を保存せずここで実行
@@ -78,7 +80,7 @@ Commands:
   bench [--runs <n>] [--json]    workspace の準備にかかる時間を計測
   config [<key> ...]             設定を表示または更新
   setup [--check] [--remove]     wx setup を確認して完了、または削除
-  setup-check [<workspace>]      standby を退役させず workspace 1 件を検証
+  setup-check [--prompt] [<ws>]  standby を退役させず workspace 1 件を検証
   resume <id> [agent] [args...]  wx session を復元
   discard-recovery <workspace>   ref を失った復旧状態を破棄
   forget <workspace-path>        workspace の管理を解除
@@ -88,14 +90,24 @@ Commands:
   daemon install|uninstall       LaunchAgent を登録または削除`,
 	},
 	"help.command.setup-check": {
-		EN: `Usage: wx setup-check [<workspace>]
+		EN: `Usage: wx setup-check [--prompt] [<workspace>]
 
 Lease one workspace normally and run the focused worktree setup checks against it.
-Unlike wx doctor --probe, this does not retire standby slots or discard the lease.`,
-		JA: `使い方: wx setup-check [<workspace>]
+Unlike wx doctor --probe, this does not retire standby slots or discard the lease.
+
+--prompt saves the agent review prompt after the check and prints its path, without
+launching an agent. To run the check and launch an agent in one step, use
+wx --setup-check claude|codex instead.
+Both record the check, so the automatic initial check is not offered again.`,
+		JA: `使い方: wx setup-check [--prompt] [<workspace>]
 
 workspace 1 件を通常どおり貸し出し、worktree のセットアップ検査を実行します。
-wx doctor --probe と異なり、standby slot の退役や貸出の破棄は行いません。`,
+wx doctor --probe と異なり、standby slot の退役や貸出の破棄は行いません。
+
+--prompt は検査後にエージェント向けの確認プロンプトを保存し、その path を表示します。
+エージェントは起動しません。検査から起動まで続けて行うには
+wx --setup-check claude|codex を使います。
+どちらも検査を記録するため、自動の初回検査は以後提示されません。`,
 	},
 	"help.command.resume": {
 		EN: `Usage: wx resume <wx-session-id> [claude|codex] [--fresh] [--branch <branch>] [agent-arguments...]

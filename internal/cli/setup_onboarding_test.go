@@ -307,3 +307,35 @@ func TestSetupFindingsNeedAttention(t *testing.T) {
 		t.Fatal("unchecked finding did not request attention")
 	}
 }
+
+func TestForcedSetupIncludesRecordedRepositoriesWithoutSelection(t *testing.T) {
+	client, handler, base, ctx := leaseFixture(t)
+	t.Setenv("HOME", filepath.Join(base, "home"))
+	repository := daemon.SetupCheckRepository{RelativePath: ".", MainPath: base}
+	handler.setupOnboarding = daemon.SetupOnboarding{SourceWorkspace: base, Repositories: []daemon.SetupCheckRepository{repository}}
+	if err := recordInitialSetup([]daemon.SetupCheckRepository{repository}, base, "2026-01-01T00:00:00Z", ""); err != nil {
+		t.Fatal(err)
+	}
+	originalTerminal, originalSelect := setupIsTerminal, setupSelect
+	t.Cleanup(func() { setupIsTerminal, setupSelect = originalTerminal, originalSelect })
+	setupSelect = func(context.Context, io.Reader, io.Writer, tui.Selection) (string, error) {
+		t.Fatal("selection was displayed")
+		return "", nil
+	}
+	setupIsTerminal = func(int) bool { return true }
+	decision, err := client.resolveForcedSetup(ctx, base)
+	if err != nil || !decision.ForceCold || len(decision.Repositories) != 1 {
+		t.Fatalf("decision=%+v err=%v", decision, err)
+	}
+}
+
+func TestForcedSetupRequiresTerminal(t *testing.T) {
+	client, handler, base, ctx := leaseFixture(t)
+	handler.setupOnboarding = daemon.SetupOnboarding{SourceWorkspace: base, Repositories: []daemon.SetupCheckRepository{{RelativePath: ".", MainPath: base}}}
+	originalTerminal := setupIsTerminal
+	t.Cleanup(func() { setupIsTerminal = originalTerminal })
+	setupIsTerminal = func(int) bool { return false }
+	if decision, err := client.resolveForcedSetup(ctx, base); err == nil || len(decision.Repositories) != 0 {
+		t.Fatalf("decision=%+v err=%v", decision, err)
+	}
+}

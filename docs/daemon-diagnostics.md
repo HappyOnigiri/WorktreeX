@@ -54,6 +54,8 @@ benchと同じstandby退役を必ず伴うため、実行中と直後は対象wo
 `wx setup-check [<workspace>]` は初回セットアップ検査と同じ読み取り検査を workspace 1 件へ再実行する。
 通常の貸出と返却を使い、`wx doctor --probe` のような standby の退役や discard 返却は行わない。
 初回プロンプトの収束条件に使うため、問題だけでなく準備計測や使用量を取得できなかった未検査も終了コード 1 にする。
+`--prompt` は検査後にプロンプトを保存するだけでagentは起動しない。agent起動まで続ける手動実行は`wx --setup-check claude|codex`で、記録の有無を無視して初回検査の流れを通す。
+どちらも自動の初回検査と同じ`checked_at`を残す。
 
 ## 準備時間の計測
 

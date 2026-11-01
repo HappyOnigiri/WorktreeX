@@ -17,6 +17,7 @@ type agentFlags struct {
 	worktree       bool
 	noWorktree     bool
 	selectWorktree bool
+	setupCheck     bool
 }
 
 func parseAgentPrefix(args []string) (agentFlags, string, []string, error) {
@@ -28,6 +29,7 @@ func parseAgentPrefix(args []string) (agentFlags, string, []string, error) {
 	fs.BoolVarP(&f.worktree, "worktree", "w", false, "create a worktree for this invocation")
 	fs.BoolVarP(&f.noWorktree, "no-worktree", "n", false, "run in the current directory for this invocation")
 	fs.BoolVarP(&f.selectWorktree, "select-worktree", "s", false, "select and save this workspace policy again")
+	fs.BoolVar(&f.setupCheck, "setup-check", false, "run the initial worktree setup check even if already recorded")
 	if err := fs.Parse(args); err != nil {
 		return f, "", nil, err
 	}

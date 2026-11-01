@@ -92,3 +92,13 @@ func TestAgentBranchArgumentValidationAndBoundary(t *testing.T) {
 		t.Fatalf("boundary parse agent=%q passed=%v err=%v", agent, passed, err)
 	}
 }
+
+func TestSetupCheckFlagIsNotPassedToAgent(t *testing.T) {
+	f, name, args, err := parseAgentPrefix([]string{"--setup-check", "claude", "--model", "x"})
+	if err != nil || !f.setupCheck || name != "claude" || !reflect.DeepEqual(args, []string{"--model", "x"}) {
+		t.Fatalf("flags=%+v name=%q args=%v err=%v", f, name, args, err)
+	}
+	if f, _, args, err := parseAgentPrefix([]string{"claude", "--setup-check"}); err != nil || f.setupCheck || len(args) != 1 {
+		t.Fatalf("flag after agent must pass through: %+v %v %v", f, args, err)
+	}
+}

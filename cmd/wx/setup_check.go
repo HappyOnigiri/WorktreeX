@@ -15,6 +15,7 @@ func runWorktreeSetupCheck(ctx context.Context, args []string) int {
 	ctx = commandContext(ctx)
 	fs := pflag.NewFlagSet("setup-check", pflag.ContinueOnError)
 	fs.Usage = func() { commandUsageLanguage(os.Stdout, "setup-check", i18n.LanguageFromContext(ctx)) }
+	savePrompt := fs.Bool("prompt", false, "save the agent prompt after the check")
 	if code, done := finishFlagParse(fs, "setup-check", args); done {
 		return code
 	}
@@ -37,7 +38,12 @@ func runWorktreeSetupCheck(ctx context.Context, args []string) int {
 	if code != 0 {
 		return code
 	}
-	reply := diag.Resolve(diag.Reply{Findings: client.RunSetupCheck(ctx, root)}, i18n.LanguageFromContext(ctx))
+	result := client.RunSetupCheck(ctx, root)
+	reply := diag.Resolve(diag.Reply{Findings: result.Findings}, i18n.LanguageFromContext(ctx))
 	diag.RenderLanguage(os.Stdout, reply, true, i18n.LanguageFromContext(ctx))
+	if *savePrompt {
+		// 問題があっても保存する。終了コードは検査結果のままにする。
+		client.SavePrompt(result)
+	}
 	return diag.ExitCode(reply)
 }

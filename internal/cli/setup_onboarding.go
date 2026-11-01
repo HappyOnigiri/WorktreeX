@@ -12,6 +12,7 @@ import (
 	"github.com/HappyOnigiri/WorktreeX/internal/config"
 	"github.com/HappyOnigiri/WorktreeX/internal/daemon"
 	"github.com/HappyOnigiri/WorktreeX/internal/diag"
+	"github.com/HappyOnigiri/WorktreeX/internal/i18n"
 	"github.com/HappyOnigiri/WorktreeX/internal/onboarding"
 	"github.com/HappyOnigiri/WorktreeX/internal/rpc"
 	"github.com/HappyOnigiri/WorktreeX/internal/tui"
@@ -67,15 +68,42 @@ func setupFindingsNeedAttention(findings []diag.Finding) bool {
 	return false
 }
 
+// resolveSetupOnboarding は daemon から初回検査の対象 repository 一覧を取得する。
+func (c Client) resolveSetupOnboarding(ctx context.Context, cwd string) (daemon.SetupOnboarding, error) {
+	callCtx, cancel := context.WithTimeout(ctx, c.discoveryTimeout())
+	defer cancel()
+	var resolved daemon.SetupOnboarding
+	err := c.RPC.Call(callCtx, "ResolveSetupOnboarding", map[string]string{"cwd": cwd}, &resolved)
+	return resolved, err
+}
+
+// resolveForcedSetup は --setup-check 指定時の対象を解決する。
+// 記録済みの repository も含め、選択 UI を出さずに全 repository を検査対象にする。
+// 指定が効かない状況（端末なし・daemon が未対応・repository なし）は無言にせずエラーにする。
+func (c Client) resolveForcedSetup(ctx context.Context, cwd string) (setupOnboardingDecision, error) {
+	if !initialSetupInteractive() {
+		return setupOnboardingDecision{}, i18n.NewError("cli.setup_check.needs_terminal", nil)
+	}
+	resolved, err := c.resolveSetupOnboarding(ctx, cwd)
+	if err != nil {
+		if rpc.IsUnknownMethod(err) {
+			return setupOnboardingDecision{}, i18n.NewError("cli.setup_check.unsupported", nil)
+		}
+		return setupOnboardingDecision{}, err
+	}
+	if len(resolved.Repositories) == 0 {
+		return setupOnboardingDecision{}, i18n.NewError("cli.setup_check.no_repository", nil)
+	}
+	return setupOnboardingDecision{Repositories: resolved.Repositories, ForceCold: true}, nil
+}
+
 // resolveInitialSetup は貸出前に初回検査の対象を解決し、対話端末でだけ利用者の方針を選ぶ。
 func (c Client) resolveInitialSetup(ctx context.Context, cwd string, enabled bool) (setupOnboardingDecision, bool, error) {
 	if !enabled || !initialSetupInteractive() {
 		return setupOnboardingDecision{}, false, nil
 	}
-	callCtx, cancel := context.WithTimeout(ctx, c.discoveryTimeout())
-	defer cancel()
-	var resolved daemon.SetupOnboarding
-	if err := c.RPC.Call(callCtx, "ResolveSetupOnboarding", map[string]string{"cwd": cwd}, &resolved); err != nil {
+	resolved, err := c.resolveSetupOnboarding(ctx, cwd)
+	if err != nil {
 		if rpc.IsUnknownMethod(err) {
 			return setupOnboardingDecision{}, false, nil
 		}
@@ -122,11 +150,7 @@ func (c Client) finishInitialSetupCheck(ctx context.Context, lease daemon.Lease,
 	var report bytes.Buffer
 	diag.RenderLanguage(&report, reply, false, language)
 	now := time.Now().UTC().Format(time.RFC3339)
-	prompt, err := onboarding.Render(c.Config.DisplayLanguage(), onboarding.Prompt{
-		Workspace: lease.SourceWorkspace, SlotPath: lease.Path,
-		RecheckCommand: "wx setup-check " + shellQuoteForPrompt(lease.SourceWorkspace),
-		Repositories:   setupPromptRepositories(lease, repositories), Findings: findings,
-	})
+	prompt, err := c.renderSetupPrompt(lease, repositories, findings)
 	if err != nil {
 		fmt.Fprintln(&report, cliLocalizer(c).Localize("cli.setup_prompt.render_failed", map[string]any{"Error": err.Error()}))
 	}
@@ -186,6 +210,15 @@ func (c Client) finishInitialSetupCheck(ctx context.Context, lease daemon.Lease,
 	default:
 		return setupCompletion{}
 	}
+}
+
+// renderSetupPrompt は検査結果から agent 向けの確認プロンプトを組み立てる。
+func (c Client) renderSetupPrompt(lease daemon.Lease, repositories []daemon.SetupCheckRepository, findings []diag.Finding) (string, error) {
+	return onboarding.Render(c.Config.DisplayLanguage(), onboarding.Prompt{
+		Workspace: lease.SourceWorkspace, SlotPath: lease.Path,
+		RecheckCommand: "wx setup-check " + shellQuoteForPrompt(lease.SourceWorkspace),
+		Repositories:   setupPromptRepositories(lease, repositories), Findings: findings,
+	})
 }
 
 func setupInitialSelection(canStart bool, prompt string, attention bool, optionCount int) int {

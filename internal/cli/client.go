@@ -133,13 +133,13 @@ func (c Client) runAgent(ctx context.Context, agent string, args, branches []str
 }
 
 func (c Client) runAgentFrom(ctx context.Context, agent string, args, branches []string, fresh bool, explicitResume, sourceCWD string) int {
-	return c.runAgentResolved(ctx, agent, args, branches, fresh, explicitResume, sourceCWD, nil, false)
+	return c.runAgentResolved(ctx, agent, args, branches, fresh, explicitResume, sourceCWD, nil, false, false)
 }
 
 // runAgentResolved は再開先を解決済みで受け取れる起動経路である。
 // resolved が nil のときだけここで resolveResume を呼ぶ。起動場所の policy より先に会話を解決した経路は、
 // 同じ問い合わせを二度行わず、picker の再表示も起こさないよう解決済みの結果を渡す。
-func (c Client) runAgentResolved(ctx context.Context, agent string, args, branches []string, fresh bool, explicitResume, sourceCWD string, resolved *resumeTarget, skipOnboarding bool) int {
+func (c Client) runAgentResolved(ctx context.Context, agent string, args, branches []string, fresh bool, explicitResume, sourceCWD string, resolved *resumeTarget, skipOnboarding, forceSetupCheck bool) int {
 	if err := c.ensureDaemon(ctx); err != nil {
 		cliError(c, err)
 		return 1
@@ -170,6 +170,10 @@ func (c Client) runAgentResolved(ctx context.Context, agent string, args, branch
 	}
 	plan := launchPlan{agent: agent, args: args, branches: branches, cwd: cwd, explicitResume: explicitResume, intentKind: intent.Kind, intentPrefix: intent.Prefix, intentRest: intent.Rest, intentCodexExec: intent.CodexExec, target: target, resuming: resuming, fresh: fresh}
 	plan.skipOnboarding = skipOnboarding
+	plan.forceSetupCheck = forceSetupCheck
+	if forceSetupCheck && (resuming || skipOnboarding) {
+		return c.rejectSetupCheck()
+	}
 	if resuming {
 		if target.WXSessionID != "" {
 			var status resumeStatus
@@ -246,7 +250,14 @@ func (c Client) launch(ctx context.Context, plan launchPlan) (int, *launchPlan) 
 		return 1, nil
 	}
 	if !plan.setupResolved && !plan.resuming {
-		decision, cancelled, setupErr := c.resolveInitialSetup(ctx, plan.cwd, !plan.skipOnboarding)
+		var decision setupOnboardingDecision
+		var cancelled bool
+		var setupErr error
+		if plan.forceSetupCheck {
+			decision, setupErr = c.resolveForcedSetup(ctx, plan.cwd)
+		} else {
+			decision, cancelled, setupErr = c.resolveInitialSetup(ctx, plan.cwd, !plan.skipOnboarding)
+		}
 		if setupErr != nil {
 			cliError(c, setupErr)
 			return 1, nil
