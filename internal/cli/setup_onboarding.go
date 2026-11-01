@@ -127,7 +127,8 @@ func (c Client) resolveInitialSetup(ctx context.Context, cwd string, enabled boo
 		},
 	})
 	if err != nil {
-		return setupOnboardingDecision{}, true, nil
+		// 選択の中断（Ctrl-C など）は失敗ではなく、起動の取り消しとして扱う。
+		return setupOnboardingDecision{}, true, nil //nolint:nilerr
 	}
 	switch answer {
 	case "check":
