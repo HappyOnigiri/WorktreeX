@@ -29,7 +29,7 @@ func TestRenderInstallUninstallAndKickstart(t *testing.T) {
 	}
 	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
 	logPath := filepath.Join(home, "Library", "Logs", "wx", "daemon.log")
-	data, err := Render("/usr/local/bin/wx", home, logPath, false)
+	data, err := Render("/usr/local/bin/wx", home, false)
 	if err != nil || !strings.Contains(string(data), Label) || !strings.Contains(string(data), "/usr/local/bin/wx") {
 		t.Fatalf("rendered plist=%q err=%v", data, err)
 	}
@@ -67,11 +67,26 @@ func TestRenderInstallUninstallAndKickstart(t *testing.T) {
 	}
 }
 
+// LaunchAgent がログを別に開くと、ローテート後も stdout/stderr が旧 inode を保持する。
+func TestRenderDoesNotKeepDaemonLogOpen(t *testing.T) {
+	t.Parallel()
+	for _, loginShell := range []bool{false, true} {
+		data, err := Render("/usr/local/bin/wx", "/tmp/wx-home", loginShell)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, key := range []string{"StandardOutPath", "StandardErrorPath"} {
+			if !bytes.Contains(data, []byte("<key>"+key+"</key><string>/dev/null</string>")) {
+				t.Fatalf("loginShell=%v: %s must discard output: %s", loginShell, key, data)
+			}
+		}
+	}
+}
+
 func TestRenderEscapesAndPreservesSpecialCharacterPaths(t *testing.T) {
 	binaryPath := `/tmp/wx & <binary> "quoted"`
 	home := `/tmp/home & <user> "quoted"`
-	logPath := `/tmp/logs & <wx> "daemon".log`
-	data, err := Render(binaryPath, home, logPath, false)
+	data, err := Render(binaryPath, home, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +108,7 @@ func TestRenderEscapesAndPreservesSpecialCharacterPaths(t *testing.T) {
 		}
 	}
 	joined := strings.Join(values, "\n")
-	for _, expected := range []string{binaryPath, home, filepath.Join(home, ".local", "bin") + ":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", logPath} {
+	for _, expected := range []string{binaryPath, home, filepath.Join(home, ".local", "bin") + ":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"} {
 		if !strings.Contains(joined, expected) {
 			t.Fatalf("decoded plist does not preserve %q: %s", expected, joined)
 		}
@@ -123,7 +138,7 @@ func TestCurrentPlistStatusDistinguishesCurrentStaleAndUnknown(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(plist), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	expected, err := Render(binary, home, logPath, LoginShellEnabled())
+	expected, err := Render(binary, home, LoginShellEnabled())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,6 +147,14 @@ func TestCurrentPlistStatusDistinguishesCurrentStaleAndUnknown(t *testing.T) {
 	}
 	if status, err := CurrentPlistStatus(); status != PlistCurrent || err != nil {
 		t.Fatalf("current plist status=%v err=%v", status, err)
+	}
+	// 旧 plist がログを直接開く構成も、再インストールが必要な差分として検出する。
+	legacy := bytes.ReplaceAll(expected, []byte("/dev/null"), []byte(logPath))
+	if err := os.WriteFile(plist, legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := CurrentPlistStatus(); status != PlistStale || err != nil {
+		t.Fatalf("legacy log destination status=%v err=%v", status, err)
 	}
 	// これは旧 daemon command 契約が生成した stale な形である。
 	if err := os.WriteFile(plist, []byte("<string>daemon start --foreground</string>\n"), 0o600); err != nil {
@@ -332,8 +355,7 @@ func TestRenderStartsTheDaemonThroughTheLoginShell(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("SHELL", "/bin/zsh")
-	logPath := filepath.Join(home, "wxd.log")
-	data, err := Render("/usr/local/bin/wx", home, logPath, true)
+	data, err := Render("/usr/local/bin/wx", home, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +370,7 @@ func TestRenderStartsTheDaemonThroughTheLoginShell(t *testing.T) {
 	}
 	// plist が SHELL を渡すので、この plist から起動した daemon の環境でも同じ出力になる。
 	t.Setenv("SHELL", "/bin/zsh")
-	again, err := Render("/usr/local/bin/wx", home, logPath, true)
+	again, err := Render("/usr/local/bin/wx", home, true)
 	if err != nil || !bytes.Equal(data, again) {
 		t.Fatalf("plist is not reproducible: err=%v\nfirst=%s\nsecond=%s", err, data, again)
 	}
@@ -359,7 +381,7 @@ func TestRenderStartsTheDaemonThroughTheLoginShell(t *testing.T) {
 func TestRenderWithoutLoginShellStartsTheBinaryDirectly(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("SHELL", "/bin/zsh")
-	data, err := Render("/usr/local/bin/wx", home, filepath.Join(home, "wxd.log"), false)
+	data, err := Render("/usr/local/bin/wx", home, false)
 	if err != nil {
 		t.Fatal(err)
 	}

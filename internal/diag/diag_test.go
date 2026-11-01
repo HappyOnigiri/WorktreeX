@@ -231,11 +231,7 @@ func TestLaunchAgentFindingReportsStaleContent(t *testing.T) {
 	if missing.Severity != SeverityProblem || !strings.Contains(missing.Action, "wx daemon install") {
 		t.Fatalf("missing launch agent finding=%+v", missing)
 	}
-	logPath, err := config.LogPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected, err := launchd.Render(binary, home, logPath, launchd.LoginShellEnabled())
+	expected, err := launchd.Render(binary, home, launchd.LoginShellEnabled())
 	if err != nil {
 		t.Fatal(err)
 	}
