@@ -610,7 +610,7 @@ func TestRestorePropagatesGitVerificationFailures(t *testing.T) {
 }
 
 func TestDeleteSnapshotRefsPropagatesGitFailures(t *testing.T) {
-	for _, pattern := range []string{" show-ref --verify --hash ", " update-ref -d "} {
+	for _, pattern := range []string{" rev-parse --verify --quiet ", " update-ref -d "} {
 		t.Run(strings.TrimSpace(pattern), func(t *testing.T) {
 			repository, repo, manager, _ := archiveFixture(t)
 			snapshot, _, err := manager.SnapshotWithPersistence(context.Background(), repo, repository, "source", time.Now().Add(time.Hour), nil)

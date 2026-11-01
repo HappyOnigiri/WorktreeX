@@ -255,11 +255,11 @@ func (p *Preparer) recordSubmoduleOutcome(repo discovery.Repository, module subm
 // declaredSubmodules は rev の .gitmodules と index から submodule を確定する。
 // .gitmodules を持たない repository はここで終わり、追加の Git 起動は1回だけになる。
 func (p *Preparer) declaredSubmodules(ctx context.Context, target, rev, identity string) ([]submodule, error) {
-	if !gitProbe(p.RunGitInWorktree(ctx, target, identity, nil, nil, "cat-file", "-e", rev+":.gitmodules")) {
+	if !gitProbe(p.RunGitInWorktree(gitx.WithExpectedExitCodes(ctx, 1), target, identity, nil, nil, "rev-parse", "--verify", "--quiet", rev+":.gitmodules")) {
 		return nil, nil
 	}
 	// 要求 OID の .gitmodules を worktree の実体に依らず読む。設定は checkout 前でも blob から解決できる。
-	entries, err := p.RunGitInWorktree(ctx, target, identity, nil, nil, "config", "--blob", rev+":.gitmodules", "--get-regexp", `^submodule\.`)
+	entries, err := p.RunGitInWorktree(gitx.WithExpectedExitCodes(ctx, 1), target, identity, nil, nil, "config", "--blob", rev+":.gitmodules", "--get-regexp", `^submodule\.`)
 	if err != nil {
 		if isEmptySubmoduleConfig(ctx, err) {
 			return nil, nil
@@ -286,10 +286,10 @@ func (p *Preparer) declaredSubmodules(ctx context.Context, target, rev, identity
 // declaredSubmodulesAtTree は rev の .gitmodules から候補を作る。
 // source repository の現在 index を読まないので、doctor は要求 OID と同じ tree を診断できる。
 func (p *Preparer) declaredSubmodulesAtTree(ctx context.Context, repository, rev string) ([]submodule, error) {
-	if !gitProbe(p.Git.Run(ctx, repository, "cat-file", "-e", rev+":.gitmodules")) {
+	if !gitProbe(p.Git.Run(gitx.WithExpectedExitCodes(ctx, 1), repository, "rev-parse", "--verify", "--quiet", rev+":.gitmodules")) {
 		return nil, nil
 	}
-	entries, err := p.Git.Run(ctx, repository, "config", "--blob", rev+":.gitmodules", "--get-regexp", `^submodule\.`)
+	entries, err := p.Git.Run(gitx.WithExpectedExitCodes(ctx, 1), repository, "config", "--blob", rev+":.gitmodules", "--get-regexp", `^submodule\.`)
 	if err != nil {
 		if isEmptySubmoduleConfig(ctx, err) {
 			return nil, nil

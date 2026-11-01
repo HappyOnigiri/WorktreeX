@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -167,20 +168,13 @@ func (m *Manager) nextMaintenanceSweep() bool {
 func (m *Manager) runBackgroundGC() {
 	result, err := m.GC(m.ctx, false)
 	if err == nil && result.Pending == 0 && result.Failed == 0 {
+		m.resolveMaintenanceIssue("automatic_gc")
 		return
 	}
-	attrs := []any{
-		"candidates", result.Candidates,
-		"scheduled", result.Scheduled,
-		"completed", result.Completed,
-		"pending", result.Pending,
-		"failed", result.Failed,
-		"reasons", result.Reasons,
-	}
-	if err != nil {
-		attrs = append(attrs, "error", err)
-	}
-	m.log.Error("automatic GC incomplete", attrs...)
+	signature, groups := summarizeGC(result, err)
+	m.maintenanceIssue("automatic_gc", signature, "automatic GC incomplete", slog.LevelError,
+		"candidates", result.Candidates, "scheduled", result.Scheduled, "completed", result.Completed,
+		"pending", result.Pending, "failed", result.Failed, "reasons", groups, "error", err != nil)
 }
 
 func (m *Manager) resolveRegisteredWorkspace(ctx context.Context, root string, discoverer *discovery.Discoverer) (discovery.Workspace, error) {
@@ -217,9 +211,10 @@ func (m *Manager) reconcileRegistry(ctx context.Context) {
 	for _, root := range roots {
 		workspaceRecord, err := m.resolveRegisteredWorkspace(ctx, root, &discoverer)
 		if err != nil {
-			m.log.Error("workspace rediscovery failed", "workspace_root", root, "error", err)
+			m.maintenanceIssue("rediscovery/"+root, stableFailure(err.Error()), "workspace rediscovery failed", slog.LevelError, "workspace_root", root, "error", err)
 			continue
 		}
+		m.resolveMaintenanceIssue("rediscovery/" + root)
 		workspaceRecord, _, err = m.store.UpsertWorkspaceGeneration(ctx, workspaceRecord)
 		if err != nil {
 			m.log.Error("workspace registry update failed", "workspace_id", workspaceRecord.ID, "error", err)

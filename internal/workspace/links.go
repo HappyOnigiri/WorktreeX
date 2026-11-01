@@ -198,7 +198,7 @@ func pruneLinkNotIgnoredAtDestination(ctx context.Context, runner *gitx.Runner, 
 // checkIgnored は path 名で指定した worktree の ignore 規則を調べる。
 // checkIgnoredAt と同じく exit 1 だけを「無視されない」と読み、実行障害と区別する。
 func checkIgnored(ctx context.Context, runner *gitx.Runner, path, relative string) (bool, error) {
-	_, err := runner.Run(ctx, path, "check-ignore", "-q", "--", relative)
+	_, err := runner.Run(gitx.WithExpectedExitCodes(ctx, 1), path, "check-ignore", "-q", "--", relative)
 	if err == nil {
 		return true, nil
 	}
@@ -215,7 +215,7 @@ func checkIgnoredAt(ctx context.Context, runner *gitx.Runner, directory *os.File
 	if directory == nil {
 		return false, errors.New("ignore check directory is nil")
 	}
-	_, err := runner.RunAt(ctx, directory, nil, nil, "check-ignore", "-q", "--", relative)
+	_, err := runner.RunAt(gitx.WithExpectedExitCodes(ctx, 1), directory, nil, nil, "check-ignore", "-q", "--", relative)
 	if err == nil {
 		return true, nil
 	}

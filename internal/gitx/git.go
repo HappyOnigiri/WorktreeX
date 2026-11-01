@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/HappyOnigiri/WorktreeX/internal/fdexec"
+	"github.com/HappyOnigiri/WorktreeX/internal/logstore"
 )
 
 type Result struct {
@@ -182,11 +183,14 @@ func (r *Runner) runEnvInput(ctx context.Context, dir string, dirFile *os.File, 
 		if attempt >= 3 || !isLockConflict(res.Stderr) {
 			failureID := newFailureID()
 			cause := err
-			if contextErr := ctx.Err(); contextErr != nil {
+			contextErr := ctx.Err()
+			if contextErr != nil {
 				cause = contextErr
 			}
-			// 表示と詳細ログで同じ原因が出るよう、差し替え後の cause を渡す。
-			r.writeFailureDetail(failureID, args, res, cause)
+			// 想定内の終了も error と Result は返し、呼び出し側の判定を維持する。
+			if !expectedExit(ctx, res) || contextErr != nil {
+				r.writeFailureDetail(failureID, args, res, cause)
+			}
 			return res, &Error{Args: append([]string(nil), args...), Result: res, FailureID: failureID, Class: classifyError(args, res), cause: cause}
 		}
 		delay := time.Duration(25*(1<<attempt)) * time.Millisecond
@@ -283,18 +287,7 @@ func WriteDetail(detailDir, content string) string {
 // writeDetail は id を指定して詳細ログを書く。
 // 診断の保存に失敗しても呼び出し側の結果は変えないため、書けなければ空を返すだけにする。
 func writeDetail(detailDir, id, content string) string {
-	path := DetailPath(detailDir, id)
-	if path == "" {
-		return ""
-	}
-	if err := os.MkdirAll(detailDir, 0o700); err != nil {
-		return ""
-	}
-	_ = os.Chmod(detailDir, 0o700)
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		return ""
-	}
-	return path
+	return logstore.WriteDetail(detailDir, id, content)
 }
 
 // FormatCommandDetail は Git 1 回分の実行内容と出力を詳細ログの本文へ整える。
@@ -362,11 +355,14 @@ func ParseWorktreeRecords(output string) []WorktreeRecord {
 func ResolveRef(ctx context.Context, r *Runner, repo, branch string) (string, bool, error) {
 	for _, ref := range []string{"refs/heads/" + branch, "refs/remotes/origin/" + branch} {
 		// --quiet は ref 不在を exit 1・stderr 空で返すため、実行障害と区別できる。
-		res, err := r.Run(ctx, repo, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+		res, err := r.Run(WithExpectedExitCodes(ctx, 1), repo, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
 		if err == nil {
 			return strings.TrimSpace(res.Stdout), true, nil
 		}
-		if ctxErr := ctx.Err(); ctxErr != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return "", false, ctxErr
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return "", false, err
 		}
 		var ge *Error
@@ -403,7 +399,7 @@ func ResolveCommit(ctx context.Context, r *Runner, repo, name string) (string, b
 	if !IsHexObjectName(name) {
 		return "", false, fmt.Errorf("%q is not a hexadecimal object name", name)
 	}
-	res, err := r.Run(ctx, repo, "rev-parse", "--verify", "--quiet", name+"^{commit}")
+	res, err := r.Run(WithExpectedExitCodes(ctx, 1), repo, "rev-parse", "--verify", "--quiet", name+"^{commit}")
 	if err == nil {
 		oid := strings.TrimSpace(res.Stdout)
 		if !strings.HasPrefix(oid, strings.ToLower(name)) {

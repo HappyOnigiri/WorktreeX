@@ -71,6 +71,5 @@ func quarantinedSlotCause(slot state.QuarantinedSlot) (string, i18n.Message) {
 	if slot.FailureDetailPath == "" {
 		return cause + "; no command output was recorded for it", message("diag.quarantine.cause_no_detail_path", "Cause", result)
 	}
-	return cause + " (command output in " + slot.FailureDetailPath + ")",
-		message("diag.job.failed_detail_path", "Cause", result, "Path", slot.FailureDetailPath)
+	return detailLogCause(cause, result, slot.FailureDetailPath)
 }

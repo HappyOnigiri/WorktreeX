@@ -318,6 +318,7 @@ func (m *Manager) expireWorkspaceSnapshots(ctx context.Context, expiredSessions 
 		sessionIDs = append(sessionIDs, sessionID)
 	}
 	sort.Strings(sessionIDs)
+	availability := map[string]error{}
 	for _, sessionID := range sessionIDs {
 		snapshots := expiredSessions[sessionID]
 		ok := true
@@ -358,6 +359,21 @@ func (m *Manager) expireWorkspaceSnapshots(ctx context.Context, expiredSessions 
 			repo, err := m.store.Repository(ctx, snapshot.RepositoryID)
 			if err != nil {
 				progress.addFailed("snapshot "+sessionID+"/"+snapshot.RepositoryID, "snapshot repository metadata could not be read", err)
+				ok = false
+				break
+			}
+			// 不在の source を snapshot ごとに Git へ渡さず、一巡に一度だけ確かめる。
+			availableErr, checked := availability[snapshot.RepositoryID]
+			if !checked {
+				info, statErr := os.Stat(string(repo.MainPath))
+				availableErr = statErr
+				if statErr == nil && !info.IsDir() {
+					availableErr = errors.New("source repository path is not a directory")
+				}
+				availability[snapshot.RepositoryID] = availableErr
+			}
+			if availableErr != nil {
+				progress.addPending("snapshot "+sessionID+"/"+snapshot.RepositoryID, "source repository is unavailable", availableErr)
 				ok = false
 				break
 			}

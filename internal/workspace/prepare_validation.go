@@ -11,6 +11,7 @@ import (
 	"github.com/HappyOnigiri/WorktreeX/internal/config"
 	"github.com/HappyOnigiri/WorktreeX/internal/discovery"
 	"github.com/HappyOnigiri/WorktreeX/internal/domain"
+	"github.com/HappyOnigiri/WorktreeX/internal/gitx"
 	"github.com/HappyOnigiri/WorktreeX/internal/state"
 )
 
@@ -140,7 +141,7 @@ func (p *Preparer) validateExistingWorktreeOwned(ctx context.Context, repo disco
 		}
 		detached := false
 		if err == nil {
-			_, detachedErr := p.runGitInDirectory(lockCtx, targetRoot, "symbolic-ref", "-q", "HEAD")
+			_, detachedErr := p.runGitInDirectory(gitx.WithExpectedExitCodes(lockCtx, 1), targetRoot, "symbolic-ref", "-q", "HEAD")
 			if interrupt := interrupted(detachedErr); interrupt != nil {
 				return interrupt
 			}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -59,6 +60,7 @@ func (m *Manager) reconcileArtifacts(ctx context.Context) {
 	diagnostics := m.artifactDiagnostics(ctx)
 	// unknown_refs は現行 DB が説明しない孤児 ref で、`wx prune` で解消できる。件数が多く毎周同じ内容になるため、
 	// per-item ではなくリポジトリ単位に束ね、そのリポジトリに新規記録があるときだけ 1 行出す。
+	observed := map[string]bool{}
 	newOrphans := map[string]bool{}
 	orphansByRepository := map[string]int{}
 	present := map[string]bool{}
@@ -88,8 +90,26 @@ func (m *Manager) reconcileArtifacts(ctx context.Context) {
 					_ = m.store.QuarantineMissingRecoveryRef(ctx, ref)
 				}
 			}
-			m.log.Warn("artifact quarantined for manual inspection", "category", category, "artifact", item)
+			if category == "mismatched_refs" {
+				m.log.Warn("artifact quarantined for manual inspection", "category", category, "artifact", item)
+			} else {
+				key := "artifact/" + category + "/" + stableFailure(item)
+				observed[key] = true
+				m.maintenanceIssue(key, stableFailure(item), "artifact quarantined for manual inspection", slog.LevelWarn, "category", category, "artifact", item)
+			}
 		}
+	}
+	m.mu.RLock()
+	resolved := []string{}
+	diagnosticErrors, _ := diagnostics["errors"].([]string)
+	for key := range m.maintenanceLogs {
+		if strings.HasPrefix(key, "artifact/") && !observed[key] && len(diagnosticErrors) == 0 {
+			resolved = append(resolved, key)
+		}
+	}
+	m.mu.RUnlock()
+	for _, key := range resolved {
+		m.resolveMaintenanceIssue(key)
 	}
 	for repositoryID := range newOrphans {
 		m.log.Warn("recovery refs are not explained by the current database; run wx prune to remove them",
