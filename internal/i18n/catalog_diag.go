@@ -197,11 +197,13 @@ var diagCatalog = map[string]Entry{
 
 	// diag.job.* は失敗した job の原因を、記録されている項目の有無で組み立てる。
 	// Operation は呼び出し側が作る入れ子 message で、Reason は記録された失敗理由の原文である。
-	"diag.job.failed_code_reason":  {EN: "{{.Operation}} failed with {{.Code}}: {{.Reason}}", JA: "{{.Operation}} が {{.Code}} で失敗しました: {{.Reason}}"},
-	"diag.job.failed_code_unknown": {EN: "{{.Operation}} failed with {{.Code}}; the failure reason was not recorded, so the root cause is unknown", JA: "{{.Operation}} が {{.Code}} で失敗しました。失敗理由が記録されておらず、根本原因は不明です"},
-	"diag.job.failed_reason":       {EN: "{{.Operation}} failed: {{.Reason}}", JA: "{{.Operation}} が失敗しました: {{.Reason}}"},
-	"diag.job.failed_unknown":      {EN: "{{.Operation}} failed; the failure reason was not recorded, so the root cause is unknown", JA: "{{.Operation}} が失敗しました。失敗理由が記録されておらず、根本原因は不明です"},
-	"diag.job.failed_detail_path":  {EN: "{{.Cause}} (command output in {{.Path}})", JA: "{{.Cause}}（command の出力: {{.Path}}）"},
+	"diag.job.failed_code_reason":    {EN: "{{.Operation}} failed with {{.Code}}: {{.Reason}}", JA: "{{.Operation}} が {{.Code}} で失敗しました: {{.Reason}}"},
+	"diag.job.failed_code_unknown":   {EN: "{{.Operation}} failed with {{.Code}}; the failure reason was not recorded, so the root cause is unknown", JA: "{{.Operation}} が {{.Code}} で失敗しました。失敗理由が記録されておらず、根本原因は不明です"},
+	"diag.job.failed_reason":         {EN: "{{.Operation}} failed: {{.Reason}}", JA: "{{.Operation}} が失敗しました: {{.Reason}}"},
+	"diag.job.failed_unknown":        {EN: "{{.Operation}} failed; the failure reason was not recorded, so the root cause is unknown", JA: "{{.Operation}} が失敗しました。失敗理由が記録されておらず、根本原因は不明です"},
+	"diag.job.failed_detail_path":    {EN: "{{.Cause}} (command output in {{.Path}})", JA: "{{.Cause}}（command の出力: {{.Path}}）"},
+	"diag.job.detail_unavailable":    {EN: "{{.Cause}} (command output unavailable at {{.Path}}; it may have been removed by log retention)", JA: "{{.Cause}}（command の出力を {{.Path}} で参照できません。ログの保持上限で削除された可能性があります）"},
+	"diag.action.detail_unavailable": {EN: "the command output at {{.Path}} is unavailable (it may have been removed by log retention); read the daemon log for the recorded failure", JA: "{{.Path}} の command 出力は参照できません（ログの保持上限で削除された可能性があります）。daemon ログの失敗記録を確認し"},
 
 	// diag.ownership.* は所有権の照合結果である。ref の一覧と path の列挙は値なので訳さない。
 	"diag.ownership.unmanaged":                   {EN: "a worktree root holds entities the database does not explain", JA: "データベースが説明できない実体が worktree root にあります"},

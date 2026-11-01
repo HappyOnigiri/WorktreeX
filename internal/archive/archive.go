@@ -221,7 +221,7 @@ func (m *Manager) publishSnapshotRefs(ctx context.Context, repo discovery.Reposi
 }
 
 func (m *Manager) ensureRecoveryRef(ctx context.Context, repo discovery.Repository, ref, oid string) error {
-	existing, err := m.gitValue(ctx, string(repo.MainPath), nil, "show-ref", "--verify", "--hash", ref)
+	existing, err := m.gitValue(gitx.WithExpectedExitCodes(ctx, 1), string(repo.MainPath), nil, "rev-parse", "--verify", "--quiet", ref)
 	if err == nil {
 		if existing != oid {
 			return fmt.Errorf("recovery ref %s already points to unexpected object", ref)
@@ -245,11 +245,12 @@ func (m *Manager) DeleteSnapshotRefs(ctx context.Context, repo discovery.Reposit
 			if _, err := m.Git.Run(ctx, string(repo.MainPath), "check-ref-format", ref); err != nil {
 				return fmt.Errorf("invalid recovery ref %q: %w", ref, err)
 			}
-			got, err := m.gitValue(ctx, string(repo.MainPath), nil, "show-ref", "--verify", "--hash", ref)
+			got, err := m.gitValue(gitx.WithExpectedExitCodes(ctx, 1), string(repo.MainPath), nil, "rev-parse", "--verify", "--quiet", ref)
 			if err != nil {
 				var gitErr *gitx.Error
-				if errors.As(err, &gitErr) && (gitErr.Result.ExitCode == 1 || gitErr.Result.ExitCode == 128) {
-					continue // A prior interrupted GC may already have removed this ref.
+				if errors.As(err, &gitErr) && gitErr.Result.ExitCode == 1 {
+					// 中断した前回の GC が ref を削除済みでも、残りの回収を続ける。
+					continue
 				}
 				return err
 			}
