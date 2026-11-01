@@ -23,6 +23,8 @@ type WorktreeOptions struct {
 	Disable        bool
 	Select         bool
 	SkipOnboarding bool
+	// ForceSetupCheck は記録済みでも初回検査を実行する（wx --setup-check）。
+	ForceSetupCheck bool
 }
 
 // SelectWorktreePolicy は agent を起動せず、現在の workspace の policy を選択して保存する。
@@ -58,6 +60,10 @@ func (c Client) RunAgentWithPolicyFrom(ctx context.Context, sourceCWD, agent str
 		fmt.Fprintln(os.Stderr, localizer.Localize("cli.error_prefix", nil), localizer.Localize("cli.resume.fresh_required", nil))
 		return 2
 	}
+	// --setup-check は新規の worktree 起動でだけ効く。効かない組み合わせは無言にせず拒否する。
+	if options.ForceSetupCheck && (options.Disable || intent.Kind != resumeIntentNone) {
+		return c.rejectSetupCheck()
+	}
 	// 会話 ID を指定した再開は、起動場所ではなく会話の側で worktree の可否を決める。
 	// 記録済み session の復元先は起動場所と無関係で、管理外の会話も当時の workspace の方針に従うのが利用者の期待に近い。
 	// worktree の指定を明示した起動はその指定を優先するため、この経路へ入れない。
@@ -91,7 +97,7 @@ func (c Client) RunAgentWithPolicyFrom(ctx context.Context, sourceCWD, agent str
 		reportStepError(cliLanguage(c), "cli.step.reload_policy", err)
 		return 1
 	}
-	return c.runAgentResolved(ctx, agent, args, branches, fresh, "", sourceCWD, nil, options.SkipOnboarding)
+	return c.runAgentResolved(ctx, agent, args, branches, fresh, "", sourceCWD, nil, options.SkipOnboarding, options.ForceSetupCheck)
 }
 
 // policyRoot は設定を引くための workspace root を返す。
@@ -238,4 +244,11 @@ func runDirectAgentFrom(ctx context.Context, cwd, agent string, args, env []stri
 	}
 	reportErrorLanguage(i18n.LanguageFromContext(ctx), err)
 	return 1
+}
+
+// rejectSetupCheck は --setup-check が効かない起動を引数エラー（終了コード 2）で終える。
+func (c Client) rejectSetupCheck() int {
+	localizer := cliLocalizer(c)
+	fmt.Fprintln(os.Stderr, localizer.Localize("cli.error_prefix", nil), localizer.Localize("cli.setup_check.conflict", nil))
+	return 2
 }

@@ -107,7 +107,7 @@ func run(ctx context.Context, args []string) int {
 		return 2
 	}
 	if agentName == "" {
-		if len(f.branches) > 0 || f.fresh {
+		if len(f.branches) > 0 || f.fresh || f.setupCheck {
 			fmt.Fprintln(os.Stderr, i18n.T(ctx, "common.error", nil)+":", i18n.T(ctx, "wx.branch_needs_agent", nil))
 			topUsageLanguage(os.Stderr, i18n.LanguageFromContext(ctx))
 			return 2
@@ -140,7 +140,7 @@ func run(ctx context.Context, args []string) int {
 		fmt.Fprintln(os.Stderr, i18n.T(ctx, "common.error", nil)+":", err)
 		return 1
 	}
-	return client.RunAgentWithPolicy(ctx, agentName, agentArgs, f.branches, f.fresh, cli.WorktreeOptions{Force: f.worktree, Disable: f.noWorktree, Select: f.selectWorktree})
+	return client.RunAgentWithPolicy(ctx, agentName, agentArgs, f.branches, f.fresh, cli.WorktreeOptions{Force: f.worktree, Disable: f.noWorktree, Select: f.selectWorktree, ForceSetupCheck: f.setupCheck})
 }
 
 func runHook(ctx context.Context, args []string) int {

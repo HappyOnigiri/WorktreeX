@@ -33,6 +33,8 @@ type launchPlan struct {
 	setupResolved   bool
 	forceCold       bool
 	skipOnboarding  bool
+	// forceSetupCheck は記録の有無に関わらず初回検査を実行する（wx --setup-check）。
+	forceSetupCheck bool
 	// setupCheckRepositories は貸出後の作り直しでもセットアップ検査を落とさないため引き継ぐ。
 	setupCheckRepositories []daemon.SetupCheckRepository
 	// leaseKind 以下は agent 起動以外への貸出（wx shell / wx run）の属性である。
