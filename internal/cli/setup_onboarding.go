@@ -102,12 +102,12 @@ func (c Client) resolveInitialSetup(ctx context.Context, cwd string, enabled boo
 	if !enabled || !initialSetupInteractive() {
 		return setupOnboardingDecision{}, false, nil
 	}
-	resolved, err := c.resolveSetupOnboarding(ctx, cwd)
-	if err != nil {
-		if rpc.IsUnknownMethod(err) {
+	resolved, resolveErr := c.resolveSetupOnboarding(ctx, cwd)
+	if resolveErr != nil {
+		if rpc.IsUnknownMethod(resolveErr) {
 			return setupOnboardingDecision{}, false, nil
 		}
-		return setupOnboardingDecision{}, false, err
+		return setupOnboardingDecision{}, false, resolveErr
 	}
 	repositories := c.initialSetupRepositories(resolved.SourceWorkspace, resolved.Repositories)
 	if len(repositories) == 0 {
