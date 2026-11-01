@@ -24,7 +24,7 @@ const (
 <key>ProgramArguments</key><array>{{if .LoginShell}}<string>{{.Shell | x}}</string><string>-lc</string><string>{{.Command | x}}</string>{{else}}<string>{{.Binary | x}}</string><string>daemon</string><string>start</string><string>--foreground</string>{{end}}</array>
 <key>RunAtLoad</key><true/><key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict><key>ThrottleInterval</key><integer>1</integer>
 <key>EnvironmentVariables</key><dict><key>HOME</key><string>{{.Home | x}}</string><key>PATH</key><string>{{.Path | x}}</string>{{if .LoginShell}}<key>SHELL</key><string>{{.Shell | x}}</string>{{end}}</dict>
-<key>StandardOutPath</key><string>{{.Log | x}}</string><key>StandardErrorPath</key><string>{{.Log | x}}</string>
+<key>StandardOutPath</key><string>/dev/null</string><key>StandardErrorPath</key><string>/dev/null</string>
 </dict></plist>`
 )
 
@@ -47,12 +47,12 @@ func ResolveBinary() (string, error) {
 	return os.Executable()
 }
 
-// plistFields は plistTemplate が読む値である。LoginShell が false のときの出力は、
-// ログインシェル経由の起動を入れる前の plist と byte 単位で同じになる。
+// plistFields は plistTemplate が読む値である。
+// stdout/stderr は旧ログの inode を保持しないよう、ログライターとは独立した /dev/null へ向ける。
 type plistFields struct {
-	Label, Binary, Home, Path, Log string
-	LoginShell                     bool
-	Shell, Command                 string
+	Label, Binary, Home, Path string
+	LoginShell                bool
+	Shell, Command            string
 }
 
 // defaultLoginShell は SHELL が使えないときに plist へ書くシェルである。
@@ -94,7 +94,7 @@ func singleQuote(value string) string {
 
 // Render は LaunchAgent の plist を生成する。loginShell は LoginShellEnabled の実効値で、
 // 比較する側と install する側が同じ値を渡さないと plist が常に stale に見える。
-func Render(binary, home, logPath string, loginShell bool) ([]byte, error) {
+func Render(binary, home string, loginShell bool) ([]byte, error) {
 	t, err := template.New("plist").Funcs(template.FuncMap{"x": xmlEscapeText}).Parse(plistTemplate)
 	if err != nil {
 		return nil, err
@@ -102,7 +102,7 @@ func Render(binary, home, logPath string, loginShell bool) ([]byte, error) {
 	// ログインシェルの起動ファイルは、この PATH を引き継いでから自分の path を足す。
 	// 起動ファイルが PATH を作らない環境でも、hook が今までと同じ command を解決できる下限として残す。
 	pathValue := filepath.Join(home, ".local", "bin") + ":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-	fields := plistFields{Label: Label, Binary: binary, Home: home, Path: pathValue, Log: logPath, LoginShell: loginShell}
+	fields := plistFields{Label: Label, Binary: binary, Home: home, Path: pathValue, LoginShell: loginShell}
 	if loginShell {
 		fields.Shell, fields.Command = shellForPlist(), loginShellCommand(binary)
 	}
@@ -152,11 +152,7 @@ func CurrentPlistStatus() (PlistStatus, error) {
 	if err != nil {
 		return PlistUnknown, fmt.Errorf("resolve wx executable: %w", err)
 	}
-	logPath, err := config.LogPath()
-	if err != nil {
-		return PlistUnknown, err
-	}
-	expected, err := Render(binary, home, logPath, LoginShellEnabled())
+	expected, err := Render(binary, home, LoginShellEnabled())
 	if err != nil {
 		return PlistUnknown, err
 	}
@@ -190,7 +186,7 @@ func Install(ctx context.Context, binary, logPath string) error {
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o700); err != nil {
 		return err
 	}
-	data, err := Render(binary, home, logPath, LoginShellEnabled())
+	data, err := Render(binary, home, LoginShellEnabled())
 	if err != nil {
 		return err
 	}

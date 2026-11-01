@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/HappyOnigiri/WorktreeX/internal/config"
 	"github.com/HappyOnigiri/WorktreeX/internal/i18n"
 	"github.com/HappyOnigiri/WorktreeX/internal/launchd"
 )
@@ -51,11 +50,7 @@ func (f *setupFixture) options() Options {
 			if err != nil {
 				return err
 			}
-			logPath, err := config.LogPath()
-			if err != nil {
-				return err
-			}
-			data, err := launchd.Render(binary, f.home, logPath, launchd.LoginShellEnabled())
+			data, err := launchd.Render(binary, f.home, launchd.LoginShellEnabled())
 			if err != nil {
 				return err
 			}
