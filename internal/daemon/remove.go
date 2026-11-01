@@ -20,7 +20,7 @@ func (m *Manager) removeSlotJob(ctx context.Context, job state.Job) error {
 		if err != nil {
 			return err
 		}
-		if processAlive(session.AgentPID) {
+		if agentProcessActiveAt(session.AgentPID, session.ReleasedAt) {
 			return dependencyPendingError{fmt.Errorf("agent process %d is still active", session.AgentPID)}
 		}
 	}

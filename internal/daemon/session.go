@@ -30,6 +30,30 @@ func processAlive(pid int) bool {
 	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
+// processStartTime は pid のプロセス開始時刻を返す。取得できない場合は ok=false を返す。
+// 実体はプラットフォーム別ファイルにあり、テストでは差し替える。
+var processStartTime = osProcessStartTime
+
+// agentProcessActiveAt は、返却済み session の agent_pid が今もそのエージェントのものかを返す。
+// OS は終了したプロセスの PID を別プロセスへ再利用するため、kill(pid,0) の成否だけでは区別できない。
+// 開始が released_at より後のプロセスは、返却前に動いていたエージェントではないので生存扱いにしない。
+// 開始時刻を取れない場合と released_at が空・不正な場合は、worktree を誤って消さないよう生存扱いのままにする。
+// commentlint:allow-long -- PID 再利用の判定根拠と、迷う場合に生存側へ倒す理由を残す
+func agentProcessActiveAt(pid int, releasedAt string) bool {
+	if !processAlive(pid) {
+		return false
+	}
+	released, err := state.ParseTime(releasedAt)
+	if err != nil {
+		return true
+	}
+	started, ok := processStartTime(pid)
+	if !ok {
+		return true
+	}
+	return !started.After(released)
+}
+
 // ReleaseUnreceivedPathLease は、まだ path を渡せていない path 貸出を返却する。
 // wx new の待機が中断されると client は token ごと消えるが、path 貸出は client_pid も heartbeat も持たず
 // OrphanCandidates から外れるため、ここで返さないと次の契機まで slot を占める。path 以外は対象にしない。

@@ -94,7 +94,7 @@ func (m *Manager) snapshotRepository(ctx context.Context, archiveManager *archiv
 }
 
 func (m *Manager) snapshotSession(ctx context.Context, s state.Session) error {
-	if processAlive(s.AgentPID) {
+	if agentProcessActiveAt(s.AgentPID, s.ReleasedAt) {
 		return dependencyPendingError{fmt.Errorf("agent process %d is still active", s.AgentPID)}
 	}
 	slot, err := m.store.Slot(ctx, s.SlotID)
