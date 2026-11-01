@@ -73,7 +73,11 @@ func TestMutationDaemonOpsFindingBoundaries(t *testing.T) {
 		} else if got := daemonLogPathForDisplay(); got == "" || !strings.Contains(got, filepath.Join(target, "Library", "Logs")) {
 			t.Fatalf("daemon log path=%q", got)
 		}
-		if lead, _ := jobFailureLead("/details/job.log"); !strings.Contains(lead, "command that failed") || !strings.Contains(lead, "/details/job.log") {
+		detailPath := filepath.Join(t.TempDir(), "job.log")
+		if err := os.WriteFile(detailPath, []byte("command output"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if lead, _ := jobFailureLead(detailPath); !strings.Contains(lead, "command that failed") || !strings.Contains(lead, detailPath) {
 			t.Fatalf("detail lead=%q", lead)
 		}
 		if lead, _ := jobFailureLead(""); !strings.Contains(lead, daemonLogPathForDisplay()) {

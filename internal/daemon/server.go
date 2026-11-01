@@ -12,6 +12,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/HappyOnigiri/WorktreeX/internal/config"
+	"github.com/HappyOnigiri/WorktreeX/internal/logstore"
 	"github.com/HappyOnigiri/WorktreeX/internal/rpc"
 	"github.com/HappyOnigiri/WorktreeX/internal/state"
 )
@@ -43,14 +44,6 @@ func Serve(ctx context.Context) error {
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o700); err != nil {
 		return err
 	}
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = file.Close() }()
-	var level slog.LevelVar
-	level.Set(slogLevel(cfg.System.Logging.Level))
-	logger := slog.New(slog.NewJSONHandler(file, &slog.HandlerOptions{Level: &level}))
 	socket, err := config.SocketPath()
 	if err != nil {
 		return err
@@ -60,6 +53,22 @@ func Serve(ctx context.Context) error {
 		return err
 	}
 	defer releaseDaemonLock(lock)
+	file, err := logstore.Open(logPath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close() }()
+	var level slog.LevelVar
+	level.Set(slogLevel(cfg.System.Logging.Level))
+	logger := slog.New(slog.NewJSONHandler(file, &slog.HandlerOptions{Level: &level}))
+	logCtx, cancelLogs := context.WithCancel(ctx)
+	logsDone := make(chan struct{})
+	go func() {
+		defer close(logsDone)
+		maintainDetailLogs(logCtx, filepath.Join(filepath.Dir(logPath), "details"), logger)
+	}()
+	defer func() { cancelLogs(); <-logsDone }()
+
 	store, openErr := state.Open(dbPath)
 	var rpcHandler rpc.Handler
 	var durable rpc.DurableIdempotency

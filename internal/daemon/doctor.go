@@ -510,6 +510,9 @@ func standbyReplenishmentFinding(item state.StandbyReplenishmentDiagnostic) diag
 // 対処の先頭をここに固定し、失敗の種別を daemon が持たない場合でも「どこを読むか」までは示す。
 // 戻り値は対処の前半なので、呼び出し側が続きを繋いで 1 文にする。
 func jobFailureLead(detailPath string) (string, i18n.Message) {
+	if detailLogUnavailable(detailPath) {
+		return "the command output at " + detailPath + " is unavailable (it may have been removed by log retention); read the daemon log for the recorded failure", message("diag.action.detail_unavailable", "Path", detailPath)
+	}
 	if detailPath != "" {
 		return "read " + detailPath + " for the command that failed", message("diag.action.read_detail_log", "Path", detailPath)
 	}
@@ -543,8 +546,7 @@ func jobFailureCause(operation string, operationMessage i18n.Message, failureCod
 	}
 	result := message(id, "Operation", operationMessage, "Code", failureCode, "Reason", failureMessage)
 	if detailPath != "" {
-		cause += " (command output in " + detailPath + ")"
-		result = message("diag.job.failed_detail_path", "Cause", result, "Path", detailPath)
+		return detailLogCause(cause, result, detailPath)
 	}
 	return cause, result
 }

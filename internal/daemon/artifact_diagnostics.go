@@ -3,12 +3,14 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/HappyOnigiri/WorktreeX/internal/discovery"
 	"github.com/HappyOnigiri/WorktreeX/internal/domain"
+	"github.com/HappyOnigiri/WorktreeX/internal/gitx"
 	"github.com/HappyOnigiri/WorktreeX/internal/state"
 )
 
@@ -227,7 +229,11 @@ func (m *Manager) appendRecoveryRefIssues(ctx context.Context, report *artifactR
 		for _, ref := range expectedList {
 			expected[ref.Ref] = ref
 		}
-		listed, listErr := m.git.Run(ctx, string(repository.MainPath), "for-each-ref", "--format=%(refname) %(objectname)", "refs/wx/recovery")
+		var listed gitx.Result
+		_, listErr := os.Stat(string(repository.MainPath))
+		if listErr == nil {
+			listed, listErr = m.git.Run(ctx, string(repository.MainPath), "for-each-ref", "--format=%(refname) %(objectname)", "refs/wx/recovery")
+		}
 		if listErr != nil {
 			// 登録済み workspace に属さず照合すべき snapshot も無い repository は、refs を読めなくても不明な点が残らない。
 			// forget が記録を消さなかった頃の DB で、その path が Git リポジトリでなくなった場合に残る。

@@ -102,6 +102,7 @@ type Manager struct {
 	maintenanceMu      sync.Mutex
 	maintenanceRunning bool
 	maintenanceDirty   bool
+	maintenanceLogs    map[string]maintenanceLogEntry
 	// usageMu は使用量の測り直し要求を1本に保つ。running 中の要求は dirty へ集約する。
 	usageMu      sync.Mutex
 	usageRunning bool

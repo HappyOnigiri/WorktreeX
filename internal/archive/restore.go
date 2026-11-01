@@ -128,7 +128,7 @@ func (m *Manager) Restore(ctx context.Context, repo discovery.Repository, target
 		if head != s.HeadOID {
 			return errors.New("restored HEAD does not match snapshot")
 		}
-		if _, detachedErr := targetRun(nil, nil, "symbolic-ref", "-q", "HEAD"); detachedErr == nil {
+		if _, detachedErr := m.Preparer.RunGitInWorktree(gitx.WithExpectedExitCodes(ctx, 1), target, targetIdentity, nil, nil, "symbolic-ref", "-q", "HEAD"); detachedErr == nil {
 			return errors.New("restored worktree is not detached")
 		} else if errors.Is(detachedErr, state.ErrOwnership) {
 			return detachedErr

@@ -310,7 +310,7 @@ func (p *Preparer) completePrepare(ctx context.Context, repo discovery.Repositor
 	if strings.TrimSpace(head.Stdout) != oid {
 		return fmt.Errorf("prepared HEAD differs from requested OID")
 	}
-	if _, err := p.runGitInDirectory(ctx, targetRoot, "symbolic-ref", "-q", "HEAD"); err == nil {
+	if _, err := p.runGitInDirectory(gitx.WithExpectedExitCodes(ctx, 1), targetRoot, "symbolic-ref", "-q", "HEAD"); err == nil {
 		return errors.New("prepared worktree is not detached")
 	}
 	if phase == preparePhaseRestore {
