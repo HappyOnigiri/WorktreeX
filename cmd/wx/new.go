@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/spf13/pflag"
@@ -17,6 +18,7 @@ func runNew(ctx context.Context, args []string) int {
 func runNewFrom(ctx context.Context, args []string, cwd string) int {
 	ctx = commandContext(ctx)
 	fs := pflag.NewFlagSet("new", pflag.ContinueOnError)
+	prs := fs.StringArray("pr", nil, "GitHub PR head (number, repo=number, or URL)")
 	branches := fs.StringArray("branch", nil, "detached base branch")
 	commits := fs.StringArray("commit", nil, "detached base commit")
 	jsonOut := fs.Bool("json", false, "print JSON")
@@ -28,10 +30,15 @@ func runNewFrom(ctx context.Context, args []string, cwd string) int {
 		commandUsageLanguage(os.Stderr, "new", i18n.LanguageFromContext(ctx))
 		return 2
 	}
+	if len(*prs) > 0 && len(*commits) > 0 {
+		fmt.Fprintln(os.Stderr, i18n.T(ctx, "common.error", nil)+":", i18n.T(ctx, "cli.pr.conflict", nil))
+		return 2
+	}
 	client, code := leaseClient()
 	if code != 0 {
 		return code
 	}
+	client = client.WithPullRequests(*prs)
 	if cwd != "" {
 		return client.RunLeaseNewFrom(ctx, cwd, *branches, *commits, *jsonOut)
 	}

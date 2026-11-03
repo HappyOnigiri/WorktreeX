@@ -31,6 +31,7 @@ type Client struct {
 	RPC           rpc.Client
 	Config        config.Config
 	forceWorktree bool
+	pullRequests  []string
 	// daemonGate は同一起動内の接続確認を一度にまとめる。
 	// Client は値で複製されるため、複製をまたいで共有できるようポインタで持つ。nil の Client は毎回確認する。
 	daemonGate *daemonGate
@@ -140,6 +141,10 @@ func (c Client) runAgentFrom(ctx context.Context, agent string, args, branches [
 // resolved が nil のときだけここで resolveResume を呼ぶ。起動場所の policy より先に会話を解決した経路は、
 // 同じ問い合わせを二度行わず、picker の再表示も起こさないよう解決済みの結果を渡す。
 func (c Client) runAgentResolved(ctx context.Context, agent string, args, branches []string, fresh bool, explicitResume, sourceCWD string, resolved *resumeTarget, skipOnboarding, forceSetupCheck bool) int {
+	intent := parseResumeIntent(agent, args)
+	if len(c.pullRequests) > 0 && (fresh || explicitResume != "" || resolved != nil || intent.Kind != resumeIntentNone || intent.Notice) {
+		return c.rejectPullRequestOptions()
+	}
 	if err := c.ensureDaemon(ctx); err != nil {
 		cliError(c, err)
 		return 1
@@ -152,7 +157,6 @@ func (c Client) runAgentResolved(ctx context.Context, agent string, args, branch
 	if sourceCWD != "" {
 		cwd = sourceCWD
 	}
-	intent := parseResumeIntent(agent, args)
 	if err := validateResumeOptions(intent, explicitResume, fresh, branches); err != nil {
 		cliError(c, err)
 		return 2
@@ -168,7 +172,7 @@ func (c Client) runAgentResolved(ctx context.Context, agent string, args, branch
 		cliError(c, err)
 		return 1
 	}
-	plan := launchPlan{agent: agent, args: args, branches: branches, cwd: cwd, explicitResume: explicitResume, intentKind: intent.Kind, intentPrefix: intent.Prefix, intentRest: intent.Rest, intentCodexExec: intent.CodexExec, target: target, resuming: resuming, fresh: fresh}
+	plan := launchPlan{agent: agent, args: args, branches: branches, pullRequests: c.pullRequests, cwd: cwd, explicitResume: explicitResume, intentKind: intent.Kind, intentPrefix: intent.Prefix, intentRest: intent.Rest, intentCodexExec: intent.CodexExec, target: target, resuming: resuming, fresh: fresh}
 	plan.skipOnboarding = skipOnboarding
 	plan.forceSetupCheck = forceSetupCheck
 	if forceSetupCheck && (resuming || skipOnboarding) {
@@ -273,7 +277,7 @@ func (c Client) launch(ctx context.Context, plan launchPlan) (int, *launchPlan) 
 	method := "ResolveAndLease"
 	newLease := func(cwd string) rpc.ResolveAndLeaseParams {
 		return rpc.ResolveAndLeaseParams{
-			Agent: plan.rpcAgentKind(), Branches: plan.branches, ClientPID: os.Getpid(), CWD: cwd, ForceCold: plan.forceCold, ForceWorktree: c.forceWorktree,
+			Agent: plan.rpcAgentKind(), Branches: plan.branches, PullRequests: plan.pullRequests, ClientPID: os.Getpid(), CWD: cwd, ForceCold: plan.forceCold, ForceWorktree: c.forceWorktree,
 			LeaseKind: plan.leaseKind, LeaseOwnerSessionID: plan.ownerSessionID, LeaseOwnerToken: plan.ownerToken,
 			Language: c.Config.LanguageForRPC(),
 		}

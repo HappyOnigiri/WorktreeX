@@ -12,6 +12,7 @@ var helpCatalogSession = map[string]Entry{
        wx <command> [options]
 
 Global options:
+  --pr <number|repo=number|URL>  fetch a GitHub PR head (repeatable)
   --branch <branch|repo=branch>  choose a detached base (repeatable)
   --fresh                        resume conversation from the current base
   --setup-check                  run the initial setup check again before launching
@@ -21,7 +22,11 @@ Global options:
   -h, --help                     show help
   -v, --version                  show version
 
-The --branch option may also appear after claude or codex; arguments after -- are passed unchanged.
+The --branch and --pr options may also appear after claude or codex; arguments after -- are passed unchanged.
+--pr accepts a GitHub PR number, repo=number, or https://github.com/owner/repo/pull/number.
+In a multi-repository workspace, use repo=number or a URL; repeat --pr for different repositories.
+With --pr, --branch must use repo=branch for another repository; unspecified repositories use their default branch.
+--pr fetches the latest head for a new detached worktree; resume, --fresh, --commit, and disabled worktrees cannot be combined with it.
 
 Commands:
   claude [arguments...]          launch Claude Code in a wx workspace
@@ -52,6 +57,7 @@ Commands:
        wx <command> [options]
 
 全体オプション:
+  --pr <number|repo=number|URL>  GitHub PR の head を取得（複数指定可）
   --branch <branch|repo=branch>  detached base を選択（複数指定可）
   --fresh                        現在の base から会話を再開
   --setup-check                  起動前に初回セットアップ検査を再実行
@@ -61,7 +67,11 @@ Commands:
   -h, --help                     ヘルプを表示
   -v, --version                  バージョンを表示
 
---branch は claude または codex の後ろにも置けます。-- より後ろの引数はそのまま渡します。
+--branch と --pr は claude または codex の後ろにも置けます。-- より後ろの引数はそのまま渡します。
+--pr は GitHub の PR 番号、repo=番号、https://github.com/owner/repo/pull/番号 を受け付けます。
+複数 repository の workspace では repo=番号 または URL を使い、repository ごとに --pr を指定できます。
+--pr と併用する --branch は別 repository の repo=branch に限定し、未指定の repository は既定 branch を使います。
+--pr は最新の head から新規 detached worktree を作成します。resume、--fresh、--commit、worktree 無効の起動とは併用できません。
 
 コマンド:
   claude [arguments...]          wx workspace で Claude Code を起動
@@ -122,7 +132,7 @@ Use --branch with --fresh to choose the detached base.`,
 --fresh と --branch で detached base を選択します。`,
 	},
 	"help.command.shell": {
-		EN: `Usage: wx shell [--branch <branch|repo=branch>] [--resume <wx-session-id>]
+		EN: `Usage: wx shell [--pr <number|repo=number|URL>] [--branch <branch|repo=branch>] [--resume <wx-session-id>]
 
 Open a shell in a managed wx workspace. This is the way to work in an isolated
 worktree yourself, without launching an agent.
@@ -140,9 +150,10 @@ chooses the base commit, and creating or pushing a branch is left to you. The
 shell comes from lease.shell, then $SHELL, then /bin/sh.
 
 Options:
+  --pr <number|repo=number|URL>  fetch a GitHub PR head (repeatable)
   --branch <branch|repo=branch>  choose a detached base (repeatable)
   --resume <wx-session-id>       restore the worktree of an earlier wx session`,
-		JA: `使い方: wx shell [--branch <branch|repo=branch>] [--resume <wx-session-id>]
+		JA: `使い方: wx shell [--pr <number|repo=number|URL>] [--branch <branch|repo=branch>] [--resume <wx-session-id>]
 
 管理された wx workspace で shell を開きます。agent を起動せず隔離された
 worktree で自分で作業するためのコマンドです。
@@ -154,11 +165,12 @@ workspace は wx claude / wx codex と同じ方法で準備され、shell 終了
 worktree は全 wx workspace と同じく detached です。--branch は base commit だけを選び、branch の作成や push は利用者が行います。shell は lease.shell、次に $SHELL、最後に /bin/sh から選びます。
 
 オプション:
+  --pr <number|repo=number|URL>  GitHub PR の head を取得（複数指定可）
   --branch <branch|repo=branch>  detached base を選択（複数指定可）
   --resume <wx-session-id>       以前の wx session の worktree を復元`,
 	},
 	"help.command.run": {
-		EN: `Usage: wx run [--branch <branch|repo=branch>] [--resume <wx-session-id>] -- <command> [arguments...]
+		EN: `Usage: wx run [--pr <number|repo=number|URL>] [--branch <branch|repo=branch>] [--resume <wx-session-id>] -- <command> [arguments...]
 
 Run one command in a managed wx workspace and exit with its status. Use it to
 run a build or a test suite against an isolated worktree without disturbing the
@@ -175,9 +187,10 @@ The command runs at the top of the workspace even when wx run is invoked from a
 subdirectory; the original directory is passed as WX_SOURCE_CWD.
 
 Options:
+  --pr <number|repo=number|URL>  fetch a GitHub PR head (repeatable)
   --branch <branch|repo=branch>  choose a detached base (repeatable)
   --resume <wx-session-id>       restore the worktree of an earlier wx session`,
-		JA: `使い方: wx run [--branch <branch|repo=branch>] [--resume <wx-session-id>] -- <command> [arguments...]
+		JA: `使い方: wx run [--pr <number|repo=number|URL>] [--branch <branch|repo=branch>] [--resume <wx-session-id>] -- <command> [arguments...]
 
 管理された wx workspace でコマンドを1つ実行し、その終了 status で終了します。
 隔離された worktree で build や test suite を、現在の状態を乱さず実行します。
@@ -189,11 +202,12 @@ command 終了時に workspace を返却し、保存と retention は wx shell �
 wx run を subdirectory から呼んでも command は workspace の top で実行し、元の directory は WX_SOURCE_CWD として渡します。
 
 オプション:
+  --pr <number|repo=number|URL>  GitHub PR の head を取得（複数指定可）
   --branch <branch|repo=branch>  detached base を選択（複数指定可）
   --resume <wx-session-id>       以前の wx session の worktree を復元`,
 	},
 	"help.command.new": {
-		EN: `Usage: wx new [--branch <branch|repo=branch>] [--commit <oid|repo=oid>] [--json]
+		EN: `Usage: wx new [--pr <number|repo=number|URL>] [--branch <branch|repo=branch>] [--commit <oid|repo=oid>] [--json]
 
 Lease a managed wx workspace and print its path on one line. Nothing is
 started in it, so this is how an agent prepares a worktree to hand to a
@@ -214,11 +228,12 @@ The session id to pass to wx release and wx shell --resume is shown by wx
 slots, or by --json here.
 
 Options:
+  --pr <number|repo=number|URL>  fetch a GitHub PR head (repeatable)
   --branch <branch|repo=branch>  choose a detached base (repeatable)
   --commit <oid|repo=oid>        use a local commit as the detached base
                                  (repeatable; run git fetch first)
   --json                         print the session id and path as JSON`,
-		JA: `使い方: wx new [--branch <branch|repo=branch>] [--commit <oid|repo=oid>] [--json]
+		JA: `使い方: wx new [--pr <number|repo=number|URL>] [--branch <branch|repo=branch>] [--commit <oid|repo=oid>] [--json]
 
 管理された wx workspace を貸し出し、path を1行で表示します。何も
 起動しないため、agent が SubAgent に渡す worktree を準備する方法です。
@@ -232,6 +247,7 @@ wx release と wx shell --resume に渡す session id は wx slots または
 ここで --json を指定すると表示されます。
 
 オプション:
+  --pr <number|repo=number|URL>  GitHub PR の head を取得（複数指定可）
   --branch <branch|repo=branch>  detached base を選択（複数指定可）
   --commit <oid|repo=oid>        ローカルにある commit を detached base にする
                                  （複数指定可。未取得なら先に git fetch）

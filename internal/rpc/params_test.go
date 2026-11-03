@@ -145,3 +145,17 @@ func TestSharedParamsDecodeLegacyPayloads(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveAndLeasePullRequestsRoundTrip(t *testing.T) {
+	encoded, err := json.Marshal(ResolveAndLeaseParams{PullRequests: []string{"a=7", "https://github.com/o/b/pull/8"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded ResolveAndLeaseParams
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(decoded.PullRequests, []string{"a=7", "https://github.com/o/b/pull/8"}) {
+		t.Fatalf("params=%+v", decoded)
+	}
+}

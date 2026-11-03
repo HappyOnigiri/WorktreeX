@@ -29,3 +29,10 @@ func (m *Manager) resolveStartPoints(ctx context.Context, w discovery.Workspace,
 		}
 	})
 }
+
+func (m *Manager) resolveLeaseStartPoints(ctx context.Context, w discovery.Workspace, branches []string, attrs leaseAttrs) ([]pool.Resolved, error) {
+	if len(attrs.PullRequests) > 0 {
+		return pool.ResolvePullRequests(ctx, m.git, w, branches, attrs.Commits, attrs.PullRequests)
+	}
+	return m.resolveStartPoints(ctx, w, branches, attrs.Commits)
+}

@@ -125,12 +125,12 @@ func (m *Manager) leaseWorkspace(ctx context.Context, w discovery.Workspace, bra
 	// 補充はこの貸出を根拠に hot / cold を決める。last_leased_at を書く前に並走されても cold と判定させない。
 	endLease := m.beginWorkspaceLease(string(w.ID))
 	defer endLease()
-	resolved, err := m.resolveStartPoints(ctx, w, branches, attrs.Commits)
+	resolved, err := m.resolveLeaseStartPoints(ctx, w, branches, attrs)
 	if err != nil {
 		return Lease{}, err
 	}
-	// branch か commit を明示した貸出の不一致は、既定 branch 向けの待機枠を STALE にする根拠にならない。
-	explicit := len(branches) > 0 || len(attrs.Commits) > 0
+	// 起点を明示した貸出の不一致は、既定 branch 向けの待機枠を STALE にする根拠にならない。
+	explicit := len(branches) > 0 || len(attrs.Commits) > 0 || len(attrs.PullRequests) > 0
 	// 明示された ForceCold と準備設定の上書きを伴う貸出は必ず cold start にする。
 	// 既存 worktree の再利用や差分更新では上書きが準備の一部にしか効かず、測る対象が上書きの効果にならない。
 	// 上書きを混ぜた fingerprint を持つ slot も、この経路を通らないため通常の貸出へ紛れない。

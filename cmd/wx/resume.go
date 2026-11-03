@@ -39,6 +39,15 @@ func runResume(ctx context.Context, args []string) int {
 		agentName = rest[0]
 		rest = rest[1:]
 	}
+	_, _, prs, prErr := extractAgentStartPoints(rest)
+	if prErr != nil {
+		fmt.Fprintln(os.Stderr, i18n.T(ctx, "common.error", nil)+":", prErr)
+		return 2
+	}
+	if len(prs) > 0 {
+		fmt.Fprintln(os.Stderr, i18n.T(ctx, "common.error", nil)+":", i18n.T(ctx, "cli.pr.conflict", nil))
+		return 2
+	}
 	fs := pflag.NewFlagSet("resume", pflag.ContinueOnError)
 	fs.SetInterspersed(false)
 	fresh := fs.Bool("fresh", false, "create a worktree from the current base")

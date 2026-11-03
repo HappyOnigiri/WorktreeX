@@ -25,7 +25,8 @@ type leaseAttrs struct {
 	Prepare config.PrepareOverride
 	// Commits は `wx new --commit` の `[repo=]<object 名>` で、branch の指定と並ぶ起点の指定である。
 	// 起点の解決にしか使わないが、branches 引数を持つ貸出経路の呼び出し全体を変えずに運ぶためここに置く。
-	Commits []string
+	Commits      []string
+	PullRequests []string
 }
 
 // withPrepareOverride は貸出要求の準備設定上書きを検証して attrs へ載せる。

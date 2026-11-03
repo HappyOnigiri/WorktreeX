@@ -20,6 +20,7 @@ func runRunFrom(ctx context.Context, args []string, cwd string) int {
 	fs := pflag.NewFlagSet("run", pflag.ContinueOnError)
 	// コマンドの argv をそのまま渡すため、wx のオプションは先頭だけで解釈する。
 	fs.SetInterspersed(false)
+	prs := fs.StringArray("pr", nil, "GitHub PR head (number, repo=number, or URL)")
 	branches := fs.StringArray("branch", nil, "detached base branch")
 	resume := fs.String("resume", "", "restore the worktree of a wx session")
 	fs.Usage = func() { commandUsageLanguage(os.Stdout, "run", i18n.LanguageFromContext(ctx)) }
@@ -34,10 +35,15 @@ func runRunFrom(ctx context.Context, args []string, cwd string) int {
 		fmt.Fprintln(os.Stderr, i18n.T(ctx, "common.error", nil)+":", i18n.T(ctx, "wx.branch_resume_conflict", nil))
 		return 2
 	}
+	if len(*prs) > 0 && *resume != "" {
+		fmt.Fprintln(os.Stderr, i18n.T(ctx, "common.error", nil)+":", i18n.T(ctx, "cli.pr.conflict", nil))
+		return 2
+	}
 	client, code := leaseClient()
 	if code != 0 {
 		return code
 	}
+	client = client.WithPullRequests(*prs)
 	if cwd != "" {
 		return client.RunLeaseCommandFrom(ctx, cwd, fs.Args(), *branches, *resume)
 	}

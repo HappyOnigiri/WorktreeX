@@ -13,6 +13,7 @@ import (
 
 type agentFlags struct {
 	branches       []string
+	pullRequests   []string
 	fresh          bool
 	worktree       bool
 	noWorktree     bool
@@ -24,6 +25,7 @@ func parseAgentPrefix(args []string) (agentFlags, string, []string, error) {
 	fs := pflag.NewFlagSet("wx", pflag.ContinueOnError)
 	fs.SetInterspersed(false)
 	var f agentFlags
+	fs.StringArrayVar(&f.pullRequests, "pr", nil, "GitHub PR head (number, repo=number, or URL)")
 	fs.StringArrayVar(&f.branches, "branch", nil, "detached base branch")
 	fs.BoolVar(&f.fresh, "fresh", false, "continue without recovery state")
 	fs.BoolVarP(&f.worktree, "worktree", "w", false, "create a worktree for this invocation")
@@ -43,35 +45,42 @@ func parseAgentPrefix(args []string) (agentFlags, string, []string, error) {
 		}
 		return f, "", nil, pflag.ErrHelp
 	}
-	agentArgs, branches, err := extractAgentBranches(rest[1:])
+	agentArgs, branches, prs, err := extractAgentStartPoints(rest[1:])
 	if err != nil {
 		return f, "", nil, err
 	}
 	f.branches = append(f.branches, branches...)
+	f.pullRequests = append(f.pullRequests, prs...)
 	return f, rest[0], agentArgs, nil
 }
 
-// extractAgentBranches は agent 名の後ろにある wx 固有の --branch だけを取り除く。
+// extractAgentStartPoints は agent 名の後ろの wx 固有の起点指定を取り除く。
 // -- に到達した後は、エージェントが同名の引数を受け取れるよう変更しない。
-func extractAgentBranches(args []string) (agentArgs, branches []string, err error) {
+func extractAgentStartPoints(args []string) (agentArgs, branches, prs []string, err error) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		switch {
-		case arg == "--":
-			return append(agentArgs, args[i:]...), branches, nil
-		case arg == "--branch":
-			if i+1 >= len(args) {
-				return nil, nil, errors.New("flag needs an argument: --branch")
-			}
-			branches = append(branches, args[i+1])
-			i++
-		case strings.HasPrefix(arg, "--branch="):
-			branches = append(branches, strings.TrimPrefix(arg, "--branch="))
-		default:
+		if arg == "--" {
+			return append(agentArgs, args[i:]...), branches, prs, nil
+		}
+		name, value, inline := strings.Cut(arg, "=")
+		if name != "--branch" && name != "--pr" {
 			agentArgs = append(agentArgs, arg)
+			continue
+		}
+		if !inline {
+			if i+1 >= len(args) || args[i+1] == "--" || (name == "--pr" && strings.HasPrefix(args[i+1], "--")) {
+				return nil, nil, nil, fmt.Errorf("flag needs an argument: %s", name)
+			}
+			i++
+			value = args[i]
+		}
+		if name == "--pr" {
+			prs = append(prs, value)
+		} else {
+			branches = append(branches, value)
 		}
 	}
-	return agentArgs, branches, nil
+	return agentArgs, branches, prs, nil
 }
 
 // finishFlagParse は各サブコマンド共通の --help 契約を適用する。
