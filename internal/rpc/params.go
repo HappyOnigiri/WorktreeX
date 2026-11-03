@@ -21,6 +21,7 @@ type ResolveAndLeaseParams struct {
 	ClientPID            int      `json:"client_pid"`
 	Commits              []string `json:"commits,omitempty"`
 	PullRequests         []string `json:"pull_requests,omitempty"`
+	SSHEnvironment       []string `json:"ssh_environment,omitempty"`
 	CWD                  string   `json:"cwd"`
 	ForceCold            bool     `json:"force_cold,omitempty"`
 	ForceWorktree        bool     `json:"force_worktree"`

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -184,5 +185,47 @@ func TestPullRequestMultiRepositoryLeaseAndFetchFailure(t *testing.T) {
 	singleEntries, err := f.Store.SlotRepositories(ctx, single.SessionID)
 	if err != nil || len(singleEntries) != 1 {
 		t.Fatalf("entries=%+v err=%v", singleEntries, err)
+	}
+}
+
+func TestPullRequestLeaseForwardsCallerSSHEnvironment(t *testing.T) {
+	t.Parallel()
+	f, repo := leaseWorktreeFixture(t)
+	origin, base := localPullRequestOrigin(t, repo)
+	gitRun(t, repo, "remote", "set-url", "origin", "git@github.com:owner/repository.git")
+	gitRun(t, repo, "config", "core.sshCommand", "/usr/bin/false")
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(t.TempDir(), "ssh")
+	content := "#!/bin/sh\n[ \"$SSH_AUTH_SOCK\" = caller ] || exit 91\nexec " + shellQuote(realGit) + " upload-pack " + shellQuote(origin) + "\n"
+	if err := os.WriteFile(script, []byte(content), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	handler := Handler{Manager: f.Manager}
+	params := rpc.ResolveAndLeaseParams{Agent: "wx-path", CWD: repo, LeaseKind: state.LeaseKindPath, PullRequests: []string{"7"}, SSHEnvironment: []string{"GIT_SSH_COMMAND=" + shellQuote(script), "GIT_SSH_VARIANT=ssh", "SSH_AUTH_SOCK=caller"}}
+	raw, err := json.Marshal(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := handler.dispatch(context.Background(), "ResolveAndLease", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease := result.(Lease)
+	if err := waitReady(context.Background(), f.Manager, 10*time.Second, lease.SessionID, lease.Token); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitOutput(t, lease.Path, "rev-parse", "HEAD"); got != base {
+		t.Fatalf("HEAD=%s want %s", got, base)
+	}
+	params.SSHEnvironment = []string{"GIT_DIR=/another/repository"}
+	raw, err = json.Marshal(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handler.dispatch(context.Background(), "ResolveAndLease", raw); err == nil {
+		t.Fatal("RPC accepted repository environment override")
 	}
 }

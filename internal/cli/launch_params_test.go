@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/HappyOnigiri/WorktreeX/internal/config"
@@ -140,6 +141,8 @@ func TestLaunchSendsLegacyResumePayload(t *testing.T) {
 }
 
 func TestAgentLaunchSendsPullRequests(t *testing.T) {
+	t.Setenv("GIT_SSH_COMMAND", "ssh -i /keys/company")
+	t.Setenv("SSH_AUTH_SOCK", "/caller/socket")
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("WX_TEST_LAUNCH_RECORD", filepath.Join(t.TempDir(), "record"))
 	t.Setenv("WX_TEST_EVENT_RECORD", filepath.Join(t.TempDir(), "events"))
@@ -155,6 +158,9 @@ func TestAgentLaunchSendsPullRequests(t *testing.T) {
 	var params rpc.ResolveAndLeaseParams
 	if err := json.Unmarshal(handler.paramsFor("ResolveAndLease"), &params); err != nil {
 		t.Fatal(err)
+	}
+	if !slices.Contains(params.SSHEnvironment, "GIT_SSH_COMMAND=ssh -i /keys/company") || !slices.Contains(params.SSHEnvironment, "SSH_AUTH_SOCK=/caller/socket") {
+		t.Fatalf("SSH environment=%v", params.SSHEnvironment)
 	}
 	if len(params.PullRequests) != 1 || params.PullRequests[0] != "7" {
 		t.Fatalf("params=%+v", params)

@@ -85,7 +85,7 @@ func TestPullRequestsFetchLatestHeadAndPreserveSource(t *testing.T) {
 	w := discovery.Workspace{Repositories: []discovery.Repository{repo}}
 	resolve := func() []Resolved {
 		t.Helper()
-		bases, err := ResolvePullRequests(context.Background(), runner, w, nil, nil, []string{"7"})
+		bases, err := ResolvePullRequests(context.Background(), runner, w, nil, nil, []string{"7"}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -129,7 +129,7 @@ func TestPullRequestsFetchLatestHeadAndPreserveSource(t *testing.T) {
 		t.Fatal("source refs changed")
 	}
 	git(t, fork, "push", origin, ":refs/pull/7/head")
-	if _, err := ResolvePullRequests(context.Background(), runner, w, nil, nil, []string{"7"}); err == nil {
+	if _, err := ResolvePullRequests(context.Background(), runner, w, nil, nil, []string{"7"}, nil); err == nil {
 		t.Fatal("missing PR used cached head")
 	}
 }
@@ -143,7 +143,7 @@ func TestPullRequestsCombineRepositoriesAndQualifiedBranch(t *testing.T) {
 	git(t, string(c.MainPath), "branch", "feature")
 	w := discovery.Workspace{Repositories: []discovery.Repository{a, b, c}}
 	for _, specs := range [][]string{{"a=7", "https://github.com/owner/b/pull/7"}, {"https://github.com/owner/a/pull/7/?x=y#z", "https://github.com/owner/b/pull/7"}} {
-		bases, err := ResolvePullRequests(context.Background(), &gitx.Runner{}, w, []string{"c=feature"}, nil, specs)
+		bases, err := ResolvePullRequests(context.Background(), &gitx.Runner{}, w, []string{"c=feature"}, nil, specs, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -151,7 +151,7 @@ func TestPullRequestsCombineRepositoriesAndQualifiedBranch(t *testing.T) {
 			t.Fatalf("bases=%+v", bases)
 		}
 	}
-	bases, err := ResolvePullRequests(context.Background(), &gitx.Runner{}, w, nil, nil, []string{"a=7"})
+	bases, err := ResolvePullRequests(context.Background(), &gitx.Runner{}, w, nil, nil, []string{"a=7"}, nil)
 	if err != nil || bases[1].RequestedRef != "main" || bases[2].RequestedRef != "main" {
 		t.Fatalf("default bases=%+v err=%v", bases, err)
 	}
@@ -175,7 +175,7 @@ func TestPullRequestsValidateAllTargetsBeforeFetching(t *testing.T) {
 		{branches: []string{"b=missing"}, prs: []string{"a=7"}},
 		{commits: []string{"1234567"}, prs: []string{"a=7"}},
 	} {
-		if _, err := ResolvePullRequests(context.Background(), &gitx.Runner{}, w, test.branches, test.commits, test.prs); err == nil {
+		if _, err := ResolvePullRequests(context.Background(), &gitx.Runner{}, w, test.branches, test.commits, test.prs, nil); err == nil {
 			t.Errorf("accepted %+v", test)
 		}
 		if refs := gitOut(t, string(a.MainPath), "for-each-ref", "refs/wx/pr"); refs != "" {
@@ -264,7 +264,7 @@ exec "$WX_TEST_REAL_GIT" "$@"
 	}
 	one, two := make(chan result, 1), make(chan result, 1)
 	go func() {
-		bases, err := ResolvePullRequests(ctx, runner, w, nil, nil, []string{"7"})
+		bases, err := ResolvePullRequests(ctx, runner, w, nil, nil, []string{"7"}, nil)
 		one <- result{bases, err}
 	}()
 	for {
@@ -284,7 +284,7 @@ exec "$WX_TEST_REAL_GIT" "$@"
 	waiting := make(chan struct{})
 	secondCtx := gitx.WithLockWaiter(ctx, pullRequestLockWaiter{waiting: waiting})
 	go func() {
-		bases, err := ResolvePullRequests(secondCtx, runner, w, nil, nil, []string{"7"})
+		bases, err := ResolvePullRequests(secondCtx, runner, w, nil, nil, []string{"7"}, nil)
 		two <- result{bases, err}
 	}()
 	select {
@@ -315,7 +315,7 @@ exec "$WX_TEST_REAL_GIT" "$@"
 	}
 	canceled, stop := context.WithCancel(context.Background())
 	stop()
-	if _, err := ResolvePullRequests(canceled, runner, w, nil, nil, []string{"7"}); err == nil {
+	if _, err := ResolvePullRequests(canceled, runner, w, nil, nil, []string{"7"}, nil); err == nil {
 		t.Fatal("canceled request succeeded")
 	}
 }

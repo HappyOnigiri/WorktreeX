@@ -27,6 +27,8 @@ type leaseAttrs struct {
 	// 起点の解決にしか使わないが、branches 引数を持つ貸出経路の呼び出し全体を変えずに運ぶためここに置く。
 	Commits      []string
 	PullRequests []string
+	// SSHEnvironment は今回の PR fetch だけに渡す起動元の認証設定である。
+	SSHEnvironment []string
 }
 
 // withPrepareOverride は貸出要求の準備設定上書きを検証して attrs へ載せる。

@@ -277,7 +277,7 @@ func (c Client) launch(ctx context.Context, plan launchPlan) (int, *launchPlan) 
 	method := "ResolveAndLease"
 	newLease := func(cwd string) rpc.ResolveAndLeaseParams {
 		return rpc.ResolveAndLeaseParams{
-			Agent: plan.rpcAgentKind(), Branches: plan.branches, PullRequests: plan.pullRequests, ClientPID: os.Getpid(), CWD: cwd, ForceCold: plan.forceCold, ForceWorktree: c.forceWorktree,
+			Agent: plan.rpcAgentKind(), Branches: plan.branches, PullRequests: plan.pullRequests, SSHEnvironment: pullRequestSSHEnvironment(plan.pullRequests), ClientPID: os.Getpid(), CWD: cwd, ForceCold: plan.forceCold, ForceWorktree: c.forceWorktree,
 			LeaseKind: plan.leaseKind, LeaseOwnerSessionID: plan.ownerSessionID, LeaseOwnerToken: plan.ownerToken,
 			Language: c.Config.LanguageForRPC(),
 		}

@@ -3,12 +3,14 @@ package cli
 import (
 	"context"
 	"reflect"
+	"slices"
 	"testing"
 )
 
 func TestPullRequestsReachLeaseRequests(t *testing.T) {
 	for _, kind := range []string{"path", "shell", "command"} {
 		t.Run(kind, func(t *testing.T) {
+			t.Setenv("GIT_SSH_COMMAND", "ssh -i /keys/company")
 			client, handler, base, ctx := leaseFixture(t)
 			prs := []string{"a=7", "b=8"}
 			client = client.WithPullRequests(prs)
@@ -24,6 +26,9 @@ func TestPullRequestsReachLeaseRequests(t *testing.T) {
 			}
 			if exit != 0 {
 				t.Fatalf("exit=%d", exit)
+			}
+			if !slices.Contains(leaseRequest(t, handler).SSHEnvironment, "GIT_SSH_COMMAND=ssh -i /keys/company") {
+				t.Fatalf("missing caller SSH environment")
 			}
 			if got := leaseRequest(t, handler).PullRequests; !reflect.DeepEqual(got, prs) {
 				t.Fatalf("PRs=%v want %v", got, prs)

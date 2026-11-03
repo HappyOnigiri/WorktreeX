@@ -24,7 +24,11 @@ type (
 
 // ResolvePullRequests は対象と起点の競合をすべて検証してから PR head を取得する。
 // 取得済み ref へは後退せず、fetch と OID の固定を同じ common-directory lock 内で終える。
-func ResolvePullRequests(ctx context.Context, git *gitx.Runner, w discovery.Workspace, branches, commits, specs []string) ([]Resolved, error) {
+// sshEnvironment は検証後に fetch の子プロセスだけへ渡し、daemon の環境を書き換えない。
+func ResolvePullRequests(ctx context.Context, git *gitx.Runner, w discovery.Workspace, branches, commits, specs, sshEnvironment []string) ([]Resolved, error) {
+	if err := gitx.ValidateSSHEnvironment(sshEnvironment); err != nil {
+		return nil, err
+	}
 	if len(commits) > 0 {
 		return nil, fmt.Errorf("--pr cannot be combined with --commit")
 	}
@@ -79,7 +83,7 @@ func ResolvePullRequests(ctx context.Context, git *gitx.Runner, w discovery.Work
 		byID[string(base.Repository.ID)] = base
 	}
 	for _, target := range targets {
-		base, err := fetchPullRequest(ctx, git, target)
+		base, err := fetchPullRequest(ctx, git, target, sshEnvironment)
 		if err != nil {
 			return nil, err
 		}
@@ -226,13 +230,13 @@ func resolvePullRequestTarget(w discovery.Workspace, remotes map[string][]pullRe
 	return pullRequestTarget{repo: repo, remote: candidates[0], number: number}, nil
 }
 
-func fetchPullRequest(ctx context.Context, git *gitx.Runner, target pullRequestTarget) (Resolved, error) {
+func fetchPullRequest(ctx context.Context, git *gitx.Runner, target pullRequestTarget, sshEnvironment []string) (Resolved, error) {
 	identity := fmt.Sprintf("%x", sha256.Sum256([]byte("github.com/"+target.remote.repository)))
 	ref := "refs/wx/pr/" + identity + "/" + target.number + "/head"
 	base := Resolved{Repository: target.repo, RequestedRef: "https://github.com/" + target.remote.repository + "/pull/" + target.number}
 	// remote の ref mapping・prune・submodule 設定を継承せず、専用 ref だけを更新する。
 	err := git.WithCommonDirLock(ctx, string(target.repo.CommonDir), func(locked context.Context) error {
-		_, err := git.Run(locked, string(target.repo.MainPath), "fetch", "--no-tags", "--no-write-fetch-head", "--refmap=", "--no-prune", "--no-recurse-submodules", "--", target.remote.name, "+refs/pull/"+target.number+"/head:"+ref)
+		_, err := git.RunEnv(locked, string(target.repo.MainPath), sshEnvironment, "fetch", "--no-tags", "--no-write-fetch-head", "--refmap=", "--no-prune", "--no-recurse-submodules", "--", target.remote.name, "+refs/pull/"+target.number+"/head:"+ref)
 		if err != nil {
 			return err
 		}

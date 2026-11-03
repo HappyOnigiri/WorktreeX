@@ -198,7 +198,7 @@ func (c Client) RunLeaseNewFrom(ctx context.Context, cwd string, branches, commi
 		language = c.Config.LanguageForRPC()
 	}
 	params := rpc.ResolveAndLeaseParams{
-		Agent: leaseAgentKindPath, Branches: branches, ClientPID: 0, Commits: commits, PullRequests: c.pullRequests, CWD: cwd, ForceCold: decision.ForceCold, ForceWorktree: c.forceWorktree,
+		Agent: leaseAgentKindPath, Branches: branches, ClientPID: 0, Commits: commits, PullRequests: c.pullRequests, SSHEnvironment: pullRequestSSHEnvironment(c.pullRequests), CWD: cwd, ForceCold: decision.ForceCold, ForceWorktree: c.forceWorktree,
 		LeaseKind: state.LeaseKindPath, LeaseOwnerSessionID: ownerID, LeaseOwnerToken: ownerToken, LeaseOwnerPID: leaseOwnerPIDFromEnvironment(),
 		Language: language,
 	}
