@@ -76,7 +76,7 @@ func leaseOwnerPIDFromEnvironment() int {
 func (c Client) leasePlan(kind, agentKind, program string, args, branches []string, resume, cwd string) launchPlan {
 	ownerID, ownerToken := leaseOwnerFromEnvironment()
 	plan := launchPlan{
-		agent: program, agentKind: agentKind, args: args, branches: branches, cwd: cwd,
+		agent: program, agentKind: agentKind, args: args, branches: branches, pullRequests: c.pullRequests, cwd: cwd,
 		leaseKind: kind, ownerSessionID: ownerID, ownerToken: ownerToken,
 	}
 	if resume != "" {
@@ -100,6 +100,9 @@ func (c Client) runLease(ctx context.Context, kind, agentKind, program string, a
 }
 
 func (c Client) runLeaseFrom(ctx context.Context, cwd, kind, agentKind, program string, args, branches []string, resume string) int {
+	if len(c.pullRequests) > 0 && resume != "" {
+		return c.rejectPullRequestOptions()
+	}
 	// 明示した session の復元先は daemon が保持するため、caller workspace の方針を
 	// 新規貸出の制約として適用しない。session の存在・種別・所有権は Resume で検証する。
 	if resume == "" {
@@ -158,6 +161,9 @@ func (c Client) RunLeaseNew(ctx context.Context, branches, commits []string, jso
 // RunLeaseNewFrom は cwd を起点に RunLeaseNew と同じ貸出をする。
 // commits は `[repo=]<object 名>` の起点指定で、git worktree add の起点に OID を書いた呼び出しの書き換え先になる。
 func (c Client) RunLeaseNewFrom(ctx context.Context, cwd string, branches, commits []string, jsonOut bool) int {
+	if len(c.pullRequests) > 0 && len(commits) > 0 {
+		return c.rejectPullRequestOptions()
+	}
 	if cwd == "" {
 		var err error
 		cwd, err = os.Getwd()
@@ -192,7 +198,7 @@ func (c Client) RunLeaseNewFrom(ctx context.Context, cwd string, branches, commi
 		language = c.Config.LanguageForRPC()
 	}
 	params := rpc.ResolveAndLeaseParams{
-		Agent: leaseAgentKindPath, Branches: branches, ClientPID: 0, Commits: commits, CWD: cwd, ForceCold: decision.ForceCold, ForceWorktree: c.forceWorktree,
+		Agent: leaseAgentKindPath, Branches: branches, ClientPID: 0, Commits: commits, PullRequests: c.pullRequests, SSHEnvironment: pullRequestSSHEnvironment(c.pullRequests), CWD: cwd, ForceCold: decision.ForceCold, ForceWorktree: c.forceWorktree,
 		LeaseKind: state.LeaseKindPath, LeaseOwnerSessionID: ownerID, LeaseOwnerToken: ownerToken, LeaseOwnerPID: leaseOwnerPIDFromEnvironment(),
 		Language: language,
 	}

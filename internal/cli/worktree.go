@@ -55,6 +55,9 @@ func (c Client) RunAgentWithPolicy(ctx context.Context, agent string, args, bran
 // RunAgentWithPolicyFrom は TUI が明示した作業元を使い、process 全体の cwd を変更せずに agent を起動する。
 func (c Client) RunAgentWithPolicyFrom(ctx context.Context, sourceCWD, agent string, args, branches []string, fresh bool, options WorktreeOptions) int {
 	intent := parseResumeIntent(agent, args)
+	if len(c.pullRequests) > 0 && (fresh || options.Disable || intent.Kind != resumeIntentNone || intent.Notice) {
+		return c.rejectPullRequestOptions()
+	}
 	if fresh && intent.Kind == resumeIntentNone {
 		localizer := cliLocalizer(c)
 		fmt.Fprintln(os.Stderr, localizer.Localize("cli.error_prefix", nil), localizer.Localize("cli.resume.fresh_required", nil))
@@ -78,6 +81,9 @@ func (c Client) RunAgentWithPolicyFrom(ctx context.Context, sourceCWD, agent str
 		return 1
 	}
 	if mode == "off" {
+		if len(c.pullRequests) > 0 {
+			return c.rejectPullRequestOptions()
+		}
 		if len(branches) > 0 || fresh {
 			localizer := cliLocalizer(c)
 			fmt.Fprintln(os.Stderr, localizer.Localize("cli.error_prefix", nil), localizer.Localize("cli.resume.branch_needs_worktree", nil))

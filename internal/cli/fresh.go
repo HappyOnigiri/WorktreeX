@@ -20,6 +20,7 @@ type launchPlan struct {
 	agentKind       string
 	args            []string
 	branches        []string
+	pullRequests    []string
 	cwd             string
 	explicitResume  string
 	intentKind      resumeIntentKind

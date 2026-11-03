@@ -145,3 +145,20 @@ func TestSharedParamsDecodeLegacyPayloads(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveAndLeasePullRequestsRoundTrip(t *testing.T) {
+	encoded, err := json.Marshal(ResolveAndLeaseParams{PullRequests: []string{"a=7", "https://github.com/o/b/pull/8"}, SSHEnvironment: []string{"GIT_SSH_COMMAND=ssh -i /keys/company"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded ResolveAndLeaseParams
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(decoded.SSHEnvironment, []string{"GIT_SSH_COMMAND=ssh -i /keys/company"}) {
+		t.Fatalf("SSH environment=%v", decoded.SSHEnvironment)
+	}
+	if !reflect.DeepEqual(decoded.PullRequests, []string{"a=7", "https://github.com/o/b/pull/8"}) {
+		t.Fatalf("params=%+v", decoded)
+	}
+}

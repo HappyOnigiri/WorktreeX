@@ -64,6 +64,7 @@ var cliCatalog = map[string]Entry{
 	"cli.resume.no_conversation":              {EN: "no conversation found for this workspace", JA: "この workspace に会話が見つかりません"},
 	"cli.resume.unknown_intent":               {EN: "unknown resume intent", JA: "不明な resume 指示です"},
 	"cli.resume.fresh_required":               {EN: "--fresh requires a resume operation", JA: "--fresh には resume 操作が必要です"},
+	"cli.pr.conflict":                         {EN: "--pr requires a new worktree and cannot be combined with resume, --fresh, --commit, or disabled worktrees", JA: "--pr は新規 worktree 専用です。resume、--fresh、--commit、worktree 無効の起動とは併用できません"},
 	"cli.resume.branch_needs_fresh":           {EN: "--branch requires --fresh when resuming", JA: "resume 時の --branch には --fresh が必要です"},
 	"cli.resume.branch_needs_worktree":        {EN: "--branch and --fresh require a worktree", JA: "--branch と --fresh には worktree が必要です"},
 	"cli.step.create_identity":                {EN: "create operation identity", JA: "操作識別子を作成"},
@@ -248,7 +249,7 @@ var cliCatalog = map[string]Entry{
 	"wx.probe.submodule_action.unreachable":  {EN: "unreachable", JA: "到達不能"},
 	// wx.* は cmd/wx が引数の誤りなどを直接出すときの固定文である。
 	"wx.config.scope_conflict":     {EN: "--workspace and --repository cannot be combined", JA: "--workspace と --repository は併用できません"},
-	"wx.branch_needs_agent":        {EN: "--branch, --fresh, and --setup-check require an agent", JA: "--branch、--fresh、--setup-check には agent が必要です"},
+	"wx.branch_needs_agent":        {EN: "--branch, --pr, --fresh, and --setup-check require an agent", JA: "--branch、--pr、--fresh、--setup-check には agent が必要です"},
 	"wx.unknown_command":           {EN: "unknown command or agent {{.Name}}", JA: "不明な command または agent {{.Name}} です"},
 	"wx.resume.agent_choice":       {EN: "agent must be claude or codex", JA: "agent は claude または codex で指定してください"},
 	"wx.resume.branch_needs_fresh": {EN: "--branch requires --fresh when resuming", JA: "resume 時の --branch には --fresh が必要です"},

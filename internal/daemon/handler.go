@@ -487,6 +487,8 @@ func (h Handler) dispatchLease(ctx context.Context, method string, raw json.RawM
 		}
 		attrs.ForceCold = p.ForceCold
 		attrs.Commits = p.Commits
+		attrs.PullRequests = p.PullRequests
+		attrs.SSHEnvironment = p.SSHEnvironment
 		result, err := h.Manager.leaseWithPolicy(ctx, p.CWD, p.Branches, p.Agent, p.ClientPID, p.ForceWorktree, attrs)
 		return result, true, err
 	case "Resume":
