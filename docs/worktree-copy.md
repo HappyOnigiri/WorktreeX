@@ -220,12 +220,12 @@ gitlink OIDを解決できないまま実体化を始めると親がdirtyな`M <
 post-checkoutより前にするのは、ユーザーのhookがsubmoduleの中身を前提にできるようにし、hook側の`git submodule update`もno-opで済ませるためである。
 include配置より前にするのは、`.worktreeinclude`やprepare commandがsubmodule配下を前提にできるようにするためである。
 tracked fileを展開するcheckoutは、実体化前のsubmodule indexをGitにresetさせない（linked worktreeでは`$GIT_DIR/modules/<name>`が無く失敗する）。gitlinkの空ディレクトリだけがそこで作られる。
-standbyのUPDATE経路は、`.gitmodules`が変わらずcommitだけが進んだgitlinkに限って子を同期する。
-対象は実体化済みの子で、ローカルmoduleが通常（shallow・promisorでない）で新しいcommitを持ち、子の差分に`.gitattributes`の変化とuntracked/ignored pathとの衝突が無い場合だけである。
-1件でも外れれば書き込む前にCold Startへ戻す。省略した子を更新で実体化しないのは、Cold Startの適格判定と省略の記録を更新側に複製しないためである。
+standbyのUPDATE経路は、`.gitmodules`が変わらずcommitだけが進んだgitlinkに限って実体化済みの子を同期し、条件を外れれば書き込む前にCold Startへ戻す。
+省略した子を更新で実体化しないのは、Cold Startの適格判定と省略の記録を更新側に複製しないためである。
+shallow・promisorのmoduleを外すのは、fetchがcloneのlocal最適化を通らず、object不足が書込み後に表れるためである。
 同期は`git submodule update`を使わず、ローカルmoduleを明示した`fetch`と`checkout --detach`で行う。
 初期化済みの子に`submodule update`を流すと、子に無いcommitを子のorigin（復元済みのupstream）からネットワーク越しに取りに行くためである。
-OIDを直接要求するfetchはprotocol v2でしか受け付けられないので、v2をコマンド単位で固定する。
+広告されないOIDのfetchをv0/v1で通すにはローカルmodule側の`uploadpack.allow*SHA1InWant`が要るため、その設定に依らないようv2をコマンド単位で固定する。
 親のcheckoutには`--no-recurse-submodules`を付ける。`submodule.recurse`を有効にした利用者の設定で、Gitが子に無いcommitへ子を動かそうとして失敗するためである。
 同期はEarly Readyより前（親のcheckoutの直後、flag付きpathのpost-checkoutより前）に置く。Early Ready後の失敗は隔離されず、子が旧gitlinkのまま親がdirtyな貸出を渡してしまうためである。
 同期で書き換えた子のfileは`submodule-cow`の共有対象に戻らない。共有の水準は準備時に決まり、更新では増えない。

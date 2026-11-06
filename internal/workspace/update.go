@@ -15,6 +15,7 @@ import (
 
 	"github.com/HappyOnigiri/WorktreeX/internal/discovery"
 	"github.com/HappyOnigiri/WorktreeX/internal/domain"
+	"github.com/HappyOnigiri/WorktreeX/internal/gitx"
 	"github.com/HappyOnigiri/WorktreeX/internal/state"
 )
 
@@ -85,12 +86,15 @@ func (p *Preparer) UpdateCheckoutLocked(ctx context.Context, repo discovery.Repo
 	defer func() { _ = destination.Close() }()
 	// submoduleの同期を前半に置くのは、Early Ready後の失敗は隔離されず、子が旧gitlinkのままの親を貸し出してしまうためである。
 	// 予約後にローカル module や子が変わり得るため、同期の対象と可否は最初の書込みの直前に決め直す。
-	// 方針が無効なら子は実体化されておらず、gitlinkの変化は予約前の検査で弾いているので、差分を読み直さない。
+	// 方針が無効な回と`.gitmodules`の無い要求OIDでは、gitlinkの変化を予約前の検査で弾いているので、差分を読み直さない。
 	var syncs []gitlinkSync
 	if err := p.timePhase(ctx, "update-submodule", func() error {
 		enabled, err := p.submodulesEnabled(repo)
 		if err != nil || !enabled {
 			return err
+		}
+		if !gitProbe(p.Git.Run(gitx.WithExpectedExitCodes(ctx, 1), string(repo.MainPath), "rev-parse", "--verify", "--quiet", newOID+":.gitmodules")) {
+			return nil
 		}
 		diff, err := p.readUpdateTreeDiff(ctx, repo, oldOID, newOID)
 		if err != nil {

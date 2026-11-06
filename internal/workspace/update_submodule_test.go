@@ -36,10 +36,23 @@ func readTestFile(t *testing.T, path string) []byte {
 
 // commit だけが進んだ gitlink は、ローカル module から子を同期して更新する。
 // fetch 元はローカル module に限り、子の origin とソースリポジトリの設定を書き換えない。
+// `submodule.recurse=true` の利用者設定でも、親の checkout が子を動かさずに同じ結果になる。
 func TestUpdateSyncsAdvancedGitlinkFromLocalModule(t *testing.T) {
 	t.Parallel()
+	for _, recurse := range []string{"false", "true"} {
+		t.Run("submodule.recurse="+recurse, func(t *testing.T) {
+			t.Parallel()
+			testUpdateSyncsAdvancedGitlink(t, recurse)
+		})
+	}
+}
+
+func testUpdateSyncsAdvancedGitlink(t *testing.T, recurse string) {
+	t.Helper()
 	ctx := context.Background()
 	f := newSubmoduleFixture(t)
+	// 共有 config に置くので、linked worktree の standby にも効く。
+	gitCommand(t, f.repository, "config", "submodule.recurse", recurse)
 	if err := f.preparer.Prepare(ctx, f.repo, f.target, f.head, testSlotID); err != nil {
 		t.Fatal(err)
 	}
