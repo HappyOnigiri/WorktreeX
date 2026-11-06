@@ -98,7 +98,8 @@ jobはsessionを持たないため待機用準備の実行枠で走り、利用�
 更新中はそのworkspaceのREADYが一時的に1本減るため、貸出が進行中のworkspaceでは始めない。
 完了は`FinishIdleStandbyUpdate`がREADYへ戻し、書込み開始後の中断は貸出付きの更新と同じく隔離する（自動再実行はしない）。
 入力変更に応じた`prepare.command`の再実行も、貸出時の更新と同じくidle更新で行う。
-更新に使えない候補はidle更新では回収せず、READYのまま残して貸出時の判断に委ねる。
+現在のmainへ更新できない候補は、貸出時に更新不適格と判定した場合と同じくSTALEにして補充へ回す。
+起点を明示した貸出は待機枠を回収しないため、READYのまま残すと通常の貸出が来るまで毎回Cold Startに落ちるからである。
 
 入口は[`internal/daemon/standby_idle_update.go`](../internal/daemon/standby_idle_update.go)である。
 貸出前にREADYが現在のmainへ揃うことは[`TestIdleStandbyRefreshUpdatesMismatchedReadyBeforeLease`](../internal/daemon/standby_idle_update_test.go)が固定している。

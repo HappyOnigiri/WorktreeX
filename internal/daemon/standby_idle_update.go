@@ -50,12 +50,16 @@ func (m *Manager) refreshIdleStandbys(ctx context.Context, w discovery.Workspace
 		}
 		started, startErr := m.startIdleStandbyUpdate(ctx, w, candidate, resolved)
 		if startErr != nil {
-			// 更新に使えない候補は READY のまま残す。回収するかは貸出時の判断に委ねる。
-			level := m.log.Debug
-			if !errors.Is(startErr, workspace.ErrUpdateIneligible) {
-				level = m.log.Info
+			// 現在の main へ更新できない候補は、次の通常貸出でも同じ理由で棄却されて STALE になる。
+			// READY のまま残すと、起点を明示した貸出は棄却だけを繰り返して毎回 cold start に落ちるため、ここで補充へ回す。
+			// 再試行で解消し得る失敗（併走する遷移・Git の失敗）は候補を飛ばすだけにする。
+			if errors.Is(startErr, workspace.ErrUpdateIneligible) {
+				if m.store.SetSlotState(ctx, candidate.ID, []string{"READY"}, "STALE", "IDLE_UPDATE_INELIGIBLE") == nil {
+					m.log.Info("standby retired as not updateable during idle refresh", "workspace_id", w.ID, "slot_id", candidate.ID, "reason", startErr)
+				}
+				continue
 			}
-			level("idle standby update rejected before writes", "workspace_id", w.ID, "slot_id", candidate.ID, "reason", startErr)
+			m.log.Info("idle standby update rejected before writes", "workspace_id", w.ID, "slot_id", candidate.ID, "reason", startErr)
 			continue
 		}
 		if started {
