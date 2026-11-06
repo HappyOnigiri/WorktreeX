@@ -89,7 +89,7 @@ Hot StandbyのUPDATEは旧HEAD・tracked clean・所有権を確認してから�
 切替後のtracked cleanは置換の後の最終検証で1回だけ確かめ、置換の直前は所有権だけを見る（置換しない回は直前の検証自体を省く）。
 置換の前後で同じ検査を重ねても、書込みを挟まない区間では結果が変わらないためである。`prepare.command`を再実行した回だけは、その汚れを置換の前に止めるため直前にも確かめる。
 更新用Git操作だけは`core.hooksPath=/dev/null`をコマンド単位で指定し、checkout filterと属性処理は維持する。
-`.gitattributes`の差、submodule構成・gitlink変更、未登録のuntracked/ignored pathとの衝突、更新互換fingerprintの不一致は書込み前にCold Startへ戻す。
+`.gitattributes`の差、`.gitmodules`の変更とsubmoduleの追加・削除、同期できないgitlink変更、未登録のuntracked/ignored pathとの衝突、更新互換fingerprintの不一致は書込み前にCold Startへ戻す。
 `.gitattributes`を除外するのは、`checkout-index`が内容の同じfileをstat cacheの一致で書き直さず、属性だけ変わったfileが旧属性のまま残るためである。
 untracked/ignored pathとの衝突は、旧treeに葉として無く要求OIDで現れるpathと、旧配置に無い配置先だけを調べる。
 旧HEADでtracked cleanなら、それ以外のtracked pathはuntrackedの実体と重ならないためである。
@@ -220,7 +220,15 @@ gitlink OIDを解決できないまま実体化を始めると親がdirtyな`M <
 post-checkoutより前にするのは、ユーザーのhookがsubmoduleの中身を前提にできるようにし、hook側の`git submodule update`もno-opで済ませるためである。
 include配置より前にするのは、`.worktreeinclude`やprepare commandがsubmodule配下を前提にできるようにするためである。
 tracked fileを展開するcheckoutは、実体化前のsubmodule indexをGitにresetさせない（linked worktreeでは`$GIT_DIR/modules/<name>`が無く失敗する）。gitlinkの空ディレクトリだけがそこで作られる。
-standbyのUPDATE経路は再同期しない。`rejectChangedGitlinks`が`.gitmodules`とgitlink OIDの完全一致しか通さないため、更新で実体が陳腐化することはない。
+standbyのUPDATE経路は、`.gitmodules`が変わらずcommitだけが進んだgitlinkに限って子を同期する。
+対象は実体化済みの子で、ローカルmoduleが通常（shallow・promisorでない）で新しいcommitを持ち、子の差分に`.gitattributes`の変化とuntracked/ignored pathとの衝突が無い場合だけである。
+1件でも外れれば書き込む前にCold Startへ戻す。省略した子を更新で実体化しないのは、Cold Startの適格判定と省略の記録を更新側に複製しないためである。
+同期は`git submodule update`を使わず、ローカルmoduleを明示した`fetch`と`checkout --detach`で行う。
+初期化済みの子に`submodule update`を流すと、子に無いcommitを子のorigin（復元済みのupstream）からネットワーク越しに取りに行くためである。
+OIDを直接要求するfetchはprotocol v2でしか受け付けられないので、v2をコマンド単位で固定する。
+親のcheckoutには`--no-recurse-submodules`を付ける。`submodule.recurse`を有効にした利用者の設定で、Gitが子に無いcommitへ子を動かそうとして失敗するためである。
+同期はEarly Readyより前（親のcheckoutの直後、flag付きpathのpost-checkoutより前）に置く。Early Ready後の失敗は隔離されず、子が旧gitlinkのまま親がdirtyな貸出を渡してしまうためである。
+同期で書き換えた子のfileは`submodule-cow`の共有対象に戻らない。共有の水準は準備時に決まり、更新では増えない。
 
 方針は `repository_defaults.submodules` と、workspace の `repository_defaults.submodules` または membership 個別の `submodules` で切り替える。
 準備用fingerprintと更新互換fingerprintの両方に混ぜて、方針変更後に旧方針のREADY slotを再利用しない。

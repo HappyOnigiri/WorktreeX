@@ -362,9 +362,9 @@ func TestValidateRootPlacementsPropagatesDirectoryWalkError(t *testing.T) {
 	}
 }
 
-// gitlink が同一な更新は submodule の実体を残したまま通り、gitlink が変わる更新は不適格として弾かれる。
-// 更新経路は `checkout --detach --force` だけで submodule を触らないため、この2つが成り立つことが前提になる。
-func TestUpdateKeepsMaterializedSubmoduleAndRejectsChangedGitlinks(t *testing.T) {
+// gitlink が同一な更新は submodule の実体を残したまま通る。
+// ローカル module に無い commit へ進んだ gitlink は、同期の fetch 元が無いため更新に使えない。
+func TestUpdateKeepsMaterializedSubmoduleAndRejectsGitlinkMissingFromLocalModule(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	f := newSubmoduleFixture(t)
@@ -388,17 +388,17 @@ func TestUpdateKeepsMaterializedSubmoduleAndRejectsChangedGitlinks(t *testing.T)
 	if status := gitOutput(t, f.target, "status", "--porcelain", "--ignore-submodules=none"); status != "" {
 		t.Fatalf("updated worktree status=%q, want clean", status)
 	}
-	// child を進めて gitlink を差し替えた OID は、submodule を再同期できないため更新に使えない。
+	// upstream の child だけを進め、ローカル module へ fetch しないまま gitlink を差し替える。
 	writeTestFile(t, filepath.Join(f.child, "kid.txt"), "ahead\n")
 	gitCommand(t, f.child, "add", ".")
 	gitCommand(t, f.child, "commit", "-m", "child ahead")
 	ahead := gitOutput(t, f.child, "rev-parse", "HEAD")
-	gitCommand(t, f.repository, "update-index", "--cacheinfo", "160000,"+ahead+",sub/kid")
+	gitCommand(t, f.repository, "update-index", "--cacheinfo", "160000,"+ahead+","+submodulePath)
 	gitCommand(t, f.repository, "commit", "-m", "advance gitlink")
 	changedGitlink := gitOutput(t, f.repository, "rev-parse", "HEAD")
 	err := validateCollisionCandidate(ctx, f.preparer, f.repo, f.target, sameGitlink, changedGitlink, nil, nil)
 	if !errors.Is(err, ErrUpdateIneligible) {
-		t.Fatalf("changed gitlink update error=%v, want ErrUpdateIneligible", err)
+		t.Fatalf("gitlink missing from the local module: update error=%v, want ErrUpdateIneligible", err)
 	}
 }
 

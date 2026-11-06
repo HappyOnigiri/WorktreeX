@@ -54,6 +54,10 @@ func (p *Preparer) ValidateUpdateCandidate(ctx context.Context, repo discovery.R
 			func(ctx context.Context) error {
 				return p.rejectUpdateCollisions(ctx, target, identity, root, diff, tree, previous, desired)
 			},
+			func(ctx context.Context) error {
+				_, err := p.planSubmoduleSync(ctx, repo, target, identity, tree.OID, root, diff.gitlinkChanges)
+				return err
+			},
 		})
 	})
 }
@@ -103,10 +107,20 @@ type updateTreeDiff struct {
 	// newModes は差分に乗る全pathの要求OIDでのmodeである。削除されたpathは000000になる。
 	newModes map[string]string
 	// added は旧treeに葉として無く要求OIDで現れるpathで、fileとdirectoryの型変化で現れる葉も含む。
-	added      []string
-	modules    bool
+	added []string
+	// gitlinkChanges は旧OIDと要求OIDの両方でgitlinkのまま指すcommitだけが変わったpathで、更新時に子を同期する候補である。
+	gitlinkChanges []gitlinkChange
+	modules        bool
+	// gitlinks はgitlinkの追加・削除・型変化を示す。子の実体化と撤去を伴うため、更新では扱わない。
 	gitlinks   bool
 	attributes bool
+}
+
+// gitlinkChange は差分に乗った gitlink 1件の旧OIDと要求OIDでの値である。
+type gitlinkChange struct {
+	path   string
+	oldOID string
+	newOID string
 }
 
 // readUpdateTreeDiff は source で旧OIDと要求OIDのtreeを比べる。
@@ -138,7 +152,10 @@ func parseUpdateTreeDiff(output string) (updateTreeDiff, error) {
 		if status == "A" {
 			diff.added = append(diff.added, filepath.Clean(filepath.FromSlash(path)))
 		}
-		if oldMode == "160000" || newMode == "160000" {
+		switch {
+		case oldMode == "160000" && newMode == "160000" && status == "M":
+			diff.gitlinkChanges = append(diff.gitlinkChanges, gitlinkChange{path: filepath.Clean(filepath.FromSlash(path)), oldOID: meta[2], newOID: meta[3]})
+		case oldMode == "160000" || newMode == "160000":
 			diff.gitlinks = true
 		}
 		if path == ".gitmodules" || strings.HasPrefix(path, ".gitmodules/") {
@@ -152,7 +169,8 @@ func parseUpdateTreeDiff(output string) (updateTreeDiff, error) {
 }
 
 // rejectIneligible は差分だけで決まる更新不能条件を返す。
-// 更新は`checkout --detach --force`だけでsubmoduleを再同期しないため、.gitmodulesとgitlinkの変化を弾く。
+// 更新が同期できるのは既存の子のcommitの移動だけで、name・url・pathの解決が変わる.gitmodulesの変化と、
+// 子の実体化や撤去を伴うgitlinkの追加・削除・型変化は弾く。commitだけの移動はplanSubmoduleSyncが判定する。
 // .gitattributesの変化も弾く。再展開は`git checkout-index`では済まず、内容が同じでstat cacheの一致するfileだけが旧属性のまま残る。
 // commentlint:allow-long -- 3つの条件それぞれの理由を1か所で読めるようにする
 func (d updateTreeDiff) rejectIneligible() error {
@@ -160,7 +178,7 @@ func (d updateTreeDiff) rejectIneligible() error {
 	case d.modules:
 		return fmt.Errorf("%w: submodule configuration changed", ErrUpdateIneligible)
 	case d.gitlinks:
-		return fmt.Errorf("%w: submodule configuration or gitlink OID changed", ErrUpdateIneligible)
+		return fmt.Errorf("%w: submodule added, removed or changed type", ErrUpdateIneligible)
 	case d.attributes:
 		return fmt.Errorf("%w: .gitattributes changed between the standby and the requested OID", ErrUpdateIneligible)
 	}
@@ -258,9 +276,14 @@ const untrackedProbeBatch = 256
 // pathspecには`:(literal)`を付ける。pathにglob文字が含まれるとmagicとして解釈されるためである。
 // commentlint:allow-long -- 列挙の意味と pathspec の注意を doc comment にまとめる
 func (p *Preparer) untrackedPathsUnder(ctx context.Context, target, identity string, probes []string) ([]string, error) {
+	return p.untrackedPathsUnderAt(ctx, target, identity, nil, probes)
+}
+
+// untrackedPathsUnderAt は prefix（submoduleなら`-C <path>`）の指すrepositoryで untrackedPathsUnder と同じ列挙を行う。
+func (p *Preparer) untrackedPathsUnderAt(ctx context.Context, target, identity string, prefix, probes []string) ([]string, error) {
 	var out []string
 	for start := 0; start < len(probes); start += untrackedProbeBatch {
-		args := []string{"ls-files", "--others", "-z", "--"}
+		args := append(slices.Clone(prefix), "ls-files", "--others", "-z", "--")
 		for _, probe := range probes[start:min(len(probes), start+untrackedProbeBatch)] {
 			args = append(args, ":(literal)"+filepath.ToSlash(probe))
 		}
