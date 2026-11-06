@@ -71,6 +71,20 @@ func TestIdleStandbyRefreshUpdatesMismatchedReadyBeforeLease(t *testing.T) {
 	}
 }
 
+// 現在の main へ更新できない READY standby は、保守の一巡で STALE にして補充へ回す。
+// 残すと起点を明示した貸出（--pr・--branch）は棄却を繰り返し、通常の貸出が来るまで毎回 cold start に落ちる。
+func TestIdleStandbyRefreshRetiresIneligibleReady(t *testing.T) {
+	f := newReuseStandbyFixture(t)
+	ctx := context.Background()
+	standby := f.readyStandby(t)
+	f.commitChangedAttributes(t)
+	f.manager.reconcileRegistry(ctx)
+	if updates := f.pendingUpdateJobs(t); len(updates) != 0 {
+		t.Fatalf("update jobs=%+v, want none for an ineligible standby", updates)
+	}
+	f.requireRetired(t, standby.ID)
+}
+
 // 直前に idle 更新を始めた workspace は、次の一巡では対象にしない。
 // include 対象が書き換わり続けても、更新が保守の一巡ごとに連鎖しないための歯止めである。
 func TestIdleStandbyRefreshRespectsCooldown(t *testing.T) {
