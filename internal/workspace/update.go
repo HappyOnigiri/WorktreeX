@@ -15,6 +15,7 @@ import (
 
 	"github.com/HappyOnigiri/WorktreeX/internal/discovery"
 	"github.com/HappyOnigiri/WorktreeX/internal/domain"
+	"github.com/HappyOnigiri/WorktreeX/internal/gitx"
 	"github.com/HappyOnigiri/WorktreeX/internal/state"
 )
 
@@ -65,7 +66,7 @@ func (s StandbyUpdateStage) Placements() []state.Placement {
 	return s.desired
 }
 
-// UpdateCheckoutLocked は更新の前半で、旧HEADの検証から要求OIDへのcheckoutと配置までを行う。
+// UpdateCheckoutLocked は更新の前半で、旧HEADの検証から要求OIDへのcheckout・submoduleの同期と配置までを行う。
 // 前半を終えたworktreeはエージェントの起動に必要なfileが揃っており、呼び出し側はここでEarly Readyを出してよい。
 // prepare commandの再実行・CoW・最終の検証はUpdateFinishLockedが行う。
 func (p *Preparer) UpdateCheckoutLocked(ctx context.Context, repo discovery.Repository, target, oldOID, newOID, slotID string, previous, desired []state.Placement) (StandbyUpdateStage, error) {
@@ -83,6 +84,27 @@ func (p *Preparer) UpdateCheckoutLocked(ctx context.Context, repo discovery.Repo
 		return StandbyUpdateStage{}, err
 	}
 	defer func() { _ = destination.Close() }()
+	// submoduleの同期を前半に置くのは、Early Ready後の失敗は隔離されず、子が旧gitlinkのままの親を貸し出してしまうためである。
+	// 予約後にローカル module や子が変わり得るため、同期の対象と可否は最初の書込みの直前に決め直す。
+	// 方針が無効な回と`.gitmodules`の無い要求OIDでは、gitlinkの変化を予約前の検査で弾いているので、差分を読み直さない。
+	var syncs []gitlinkSync
+	if err := p.timePhase(ctx, "update-submodule", func() error {
+		enabled, err := p.submodulesEnabled(repo)
+		if err != nil || !enabled {
+			return err
+		}
+		if !gitProbe(p.Git.Run(gitx.WithExpectedExitCodes(ctx, 1), string(repo.MainPath), "rev-parse", "--verify", "--quiet", newOID+":.gitmodules")) {
+			return nil
+		}
+		diff, err := p.readUpdateTreeDiff(ctx, repo, oldOID, newOID)
+		if err != nil {
+			return err
+		}
+		syncs, err = p.planSubmoduleSync(ctx, repo, target, identity, newOID, destination, diff.gitlinkChanges)
+		return err
+	}); err != nil {
+		return StandbyUpdateStage{}, err
+	}
 	if err := p.timePhase(ctx, "update-place", func() error {
 		if err := validateRecordedPlacements(destination, previous); err != nil {
 			return err
@@ -92,7 +114,7 @@ func (p *Preparer) UpdateCheckoutLocked(ctx context.Context, repo discovery.Repo
 		return StandbyUpdateStage{}, err
 	}
 	if err := p.timePhase(ctx, "update-checkout", func() error {
-		return p.checkoutUpdate(ctx, repo, target, identity, oldOID, newOID, destination)
+		return p.checkoutUpdate(ctx, repo, target, identity, oldOID, newOID, destination, syncs)
 	}); err != nil {
 		return StandbyUpdateStage{}, err
 	}

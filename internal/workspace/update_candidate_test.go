@@ -112,8 +112,34 @@ func TestParseUpdateTreeDiff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !gitlink.gitlinks || !gitlink.modules || !errors.Is(gitlink.rejectIneligible(), ErrUpdateIneligible) {
-		t.Fatalf("gitlink diff=%+v was not rejected", gitlink)
+	if gitlink.gitlinks || !gitlink.modules || !errors.Is(gitlink.rejectIneligible(), ErrUpdateIneligible) {
+		t.Fatalf("gitlink diff=%+v was not rejected by the .gitmodules change", gitlink)
+	}
+	// commit だけが動いた gitlink は同期の候補へ回し、差分だけでは弾かない。
+	want := gitlinkChange{path: "sub", oldOID: strings.Repeat("1", 40), newOID: strings.Repeat("2", 40)}
+	if len(gitlink.gitlinkChanges) != 1 || gitlink.gitlinkChanges[0] != want {
+		t.Fatalf("gitlinkChanges=%+v, want %+v", gitlink.gitlinkChanges, want)
+	}
+	moved, err := parseUpdateTreeDiff(record("160000", "160000", "M", "sub"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := moved.rejectIneligible(); err != nil {
+		t.Fatalf("moved gitlink was rejected by the diff alone: %v", err)
+	}
+	// 子の実体化や撤去を伴う追加・削除・型変化は、同期の対象にせず差分だけで弾く。
+	for _, structural := range []string{
+		record("000000", "160000", "A", "sub"),
+		record("160000", "000000", "D", "sub"),
+		record("100644", "160000", "T", "sub"),
+	} {
+		diff, err := parseUpdateTreeDiff(structural)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !diff.gitlinks || len(diff.gitlinkChanges) != 0 || !errors.Is(diff.rejectIneligible(), ErrUpdateIneligible) {
+			t.Fatalf("structural gitlink diff %q=%+v was not rejected", structural, diff)
+		}
 	}
 	truncatedRecord := ":100644 100644 " + strings.Repeat("1", 40) + " " + strings.Repeat("2", 40) + " M"
 	for _, malformed := range []string{"garbage\x00path\x00", ":100644 100644 a b\x00path\x00", record("100644", "100644", "M", ""), truncatedRecord} {

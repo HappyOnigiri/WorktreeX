@@ -117,7 +117,7 @@ func (p *Preparer) rejectUnrestorableFlaggedPaths(ctx context.Context, target, i
 // checkoutUpdate はstandbyを要求OIDへ切り替える。
 // flag付きpathが差分に乗る場合は「解除 → checkout → post-checkout → 復元」の順に進め、
 // hookがflagを張り直さない構成でも個人設定の内容・mode・flagが残るようにする。
-func (p *Preparer) checkoutUpdate(ctx context.Context, repo discovery.Repository, target, identity, oldOID, newOID string, root *os.Root) error {
+func (p *Preparer) checkoutUpdate(ctx context.Context, repo discovery.Repository, target, identity, oldOID, newOID string, root *os.Root, syncs []gitlinkSync) error {
 	paths, flags, err := p.flaggedUpdatePaths(ctx, repo, target, identity, oldOID, newOID)
 	if err != nil {
 		return err
@@ -132,7 +132,12 @@ func (p *Preparer) checkoutUpdate(ctx context.Context, repo discovery.Repository
 			return err
 		}
 	}
-	if _, err := p.RunGitInWorktree(ctx, target, identity, nil, nil, "-c", "core.hooksPath=/dev/null", "checkout", "--detach", "--force", newOID); err != nil {
+	// 子はsyncSubmoduleGitlinksがローカルmoduleから同期する。submodule.recurseの設定でGitが子を動かすと、子に無いcommitで失敗する。
+	if _, err := p.RunGitInWorktree(ctx, target, identity, nil, nil, "-c", "core.hooksPath=/dev/null", "checkout", "--detach", "--force", "--no-recurse-submodules", newOID); err != nil {
+		return err
+	}
+	// post-checkoutより前に同期し、hookが子の中身を前提にでき、hook側の`git submodule update`もno-opで済むようにする。
+	if err := p.syncSubmoduleGitlinks(ctx, target, identity, syncs); err != nil {
 		return err
 	}
 	if len(stashed) == 0 {
